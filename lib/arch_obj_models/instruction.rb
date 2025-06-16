@@ -138,10 +138,8 @@ class Instruction < DatabaseObject
       return nil unless @data.key?("operation()")
 
       type_checked_ast = type_checked_operation_ast(effective_xlen)
-      print "Pruning #{name} operation()..."
       symtab = fill_symtab(effective_xlen, type_checked_ast)
       pruned_ast = type_checked_ast.prune(symtab)
-      puts "done"
       pruned_ast.freeze_tree(symtab)
 
       symtab.release
@@ -156,15 +154,9 @@ class Instruction < DatabaseObject
     if @data["operation()"].nil?
       []
     else
-      # RubyProf.start
       ast = type_checked_operation_ast(effective_xlen)
-      print "Determining reachable funcs from #{name} (#{effective_xlen})..."
       symtab = fill_symtab(effective_xlen, ast)
       fns = ast.reachable_functions(symtab)
-      puts "done"
-      # result = RubyProf.stop
-      # RubyProf::FlatPrinter.new(result).print($stdout)
-      # exit
       symtab.release
       fns
     end

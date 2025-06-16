@@ -548,13 +548,13 @@ namespace udb {
     _Bits(_Bits &&) noexcept = default;
 
     // from a bits of same width and different sign
-    constexpr _Bits(const _Bits<N, !Signed> &other) : m_val(other.m_val) {}
-    constexpr _Bits(_Bits<N, !Signed> &&other) : m_val(std::move(other.m_val)) {}
+    constexpr explicit _Bits(const _Bits<N, !Signed> &other) : m_val(other.m_val) {}
+    constexpr explicit _Bits(_Bits<N, !Signed> &&other) : m_val(std::move(other.m_val)) {}
 
     // from a KNOWN bits of different width and sign
     template <template <unsigned, bool> class OtherBitsType, unsigned OtherN, bool OtherSigned>
       requires(KnownBitsType<OtherBitsType<OtherN, OtherSigned>>)
-    constexpr _Bits(const OtherBitsType<OtherN, OtherSigned> &other) {
+    explicit constexpr _Bits(const OtherBitsType<OtherN, OtherSigned> &other) {
       if constexpr (OtherN > MaxNativePrecision) {
         m_val = from_gmp<N>(other.get());
       } else if constexpr (N > MaxNativePrecision) {
@@ -568,7 +568,7 @@ namespace udb {
     // from a KNOWN bits of different width and sign
     template <template <unsigned, bool> class OtherBitsType, unsigned OtherN, bool OtherSigned>
       requires(KnownBitsType<OtherBitsType<OtherN, OtherSigned>>)
-    constexpr _Bits(OtherBitsType<OtherN, OtherSigned> &&other) {
+    explicit constexpr _Bits(OtherBitsType<OtherN, OtherSigned> &&other) {
       if constexpr (OtherN == InfinitePrecision) {
         m_val = from_gmp<N>(std::move(other.m_val));
       } else if constexpr (OtherN > MaxNativePrecision) {
@@ -619,6 +619,13 @@ namespace udb {
       } else {
         return m_val;
       }
+    }
+
+    // cast to other Bits types
+    template <template <unsigned, bool> class OtherBitsType, unsigned OtherN, bool OtherSigned>
+      requires (BitsType<OtherBitsType<OtherN, OtherSigned>> && !std::same_as<OtherBitsType<OtherN, OtherSigned>, _Bits>)
+    constexpr operator OtherBitsType<OtherN, OtherSigned>() const {
+      return OtherBitsType<OtherN, OtherSigned>(*this);
     }
 
     // assignment
@@ -741,7 +748,7 @@ namespace udb {
 
     template <template <unsigned, bool> class RhsBitsType, unsigned RhsN, bool RhsSigned>
       requires(BitsType<RhsBitsType<RhsN, RhsSigned>>)
-    BitwiseReturnType<RhsBitsType, RhsN, RhsSigned> operator&(
+    constexpr BitwiseReturnType<RhsBitsType, RhsN, RhsSigned> operator&(
         const RhsBitsType<RhsN, RhsSigned> &_rhs) const {
       if constexpr (RhsBitsType<RhsN, RhsSigned>::PossiblyUnknown) {
         _Bits<constmax_v<N, RhsN>, Signed> lhs{*this};
@@ -761,8 +768,8 @@ namespace udb {
         }
       } else {
         // both rhs and lhs are known
-        _RuntimeBits<constmax_v<N, RhsN>, Signed> lhs{*this};
-        RhsBitsType<constmax_v<N, RhsN>, RhsSigned> rhs{_rhs};
+          _Bits<constmax_v<N, RhsN>, Signed> lhs{*this};
+          RhsBitsType<constmax_v<N, RhsN>, RhsSigned> rhs{_rhs};
 
         if constexpr (RhsBitsType<RhsN, RhsSigned>::RuntimeWidth) {
           return _RuntimeBits<constmax_v<N, RhsN>, Signed && RhsSigned>{lhs.get() & rhs.get(),
@@ -775,7 +782,7 @@ namespace udb {
 
     template <template <unsigned, bool> class RhsBitsType, unsigned RhsN, bool RhsSigned>
       requires(BitsType<RhsBitsType<RhsN, RhsSigned>>)
-    BitwiseReturnType<RhsBitsType, RhsN, RhsSigned> operator|(
+    constexpr BitwiseReturnType<RhsBitsType, RhsN, RhsSigned> operator|(
         const RhsBitsType<RhsN, RhsSigned> &_rhs) const {
       if constexpr (RhsBitsType<RhsN, RhsSigned>::PossiblyUnknown) {
         _Bits<constmax_v<N, RhsN>, Signed> lhs{*this};
@@ -795,7 +802,7 @@ namespace udb {
         }
       } else {
         // both rhs and lhs are known
-        _RuntimeBits<constmax_v<N, RhsN>, Signed> lhs{*this};
+        _Bits<constmax_v<N, RhsN>, Signed> lhs{*this};
         RhsBitsType<constmax_v<N, RhsN>, RhsSigned> rhs{_rhs};
 
         if constexpr (RhsBitsType<RhsN, RhsSigned>::RuntimeWidth) {
@@ -809,7 +816,7 @@ namespace udb {
 
     template <template <unsigned, bool> class RhsBitsType, unsigned RhsN, bool RhsSigned>
       requires(BitsType<RhsBitsType<RhsN, RhsSigned>>)
-    BitwiseReturnType<RhsBitsType, RhsN, RhsSigned> operator^(
+    constexpr BitwiseReturnType<RhsBitsType, RhsN, RhsSigned> operator^(
         const RhsBitsType<RhsN, RhsSigned> &_rhs) const {
       if constexpr (RhsBitsType<RhsN, RhsSigned>::PossiblyUknown) {
         _Bits<constmax_v<N, RhsN>, Signed> lhs{*this};
@@ -824,7 +831,7 @@ namespace udb {
         }
       } else {
         // both rhs and lhs are known
-        _RuntimeBits<constmax_v<N, RhsN>, Signed> lhs{*this};
+        _Bits<constmax_v<N, RhsN>, Signed> lhs{*this};
         RhsBitsType<constmax_v<N, RhsN>, RhsSigned> rhs{_rhs};
 
         if constexpr (RhsBitsType<RhsN, RhsSigned>::RuntimeWidth) {
@@ -919,15 +926,13 @@ namespace udb {
     }
 
     // widening left shift when the shift amount is known at compile time
-    template <template <unsigned, bool> class ShiftBitsType, unsigned ShiftN,
-              ShiftBitsType<ShiftN, false> SHAMT>
-      requires(KnownBitsType<ShiftBitsType<ShiftN, false>>)
+    template <unsigned SHAMT>
     constexpr _Bits<addsat_v<N, SHAMT>, Signed> widening_sll() const {
-      using ReturnType = _Bits<addsat_v<N, SHAMT.get()>, Signed>;
+      using ReturnType = _Bits<addsat_v<N, SHAMT>, Signed>;
       if constexpr (N >= MaxNativePrecision) {
-        return {ReturnType{get()}.get() << SHAMT.get()};
+        return _Bits<addsat_v<N, SHAMT>, Signed>{ReturnType{get()}.get() << SHAMT};
       } else {
-        return {ReturnType{get()}.get() << SHAMT.get()};
+        return _Bits<addsat_v<N, SHAMT>, Signed>{ReturnType{get()}.get() << SHAMT};
       }
     }
 
@@ -1216,9 +1221,9 @@ namespace udb {
   constexpr _Bits<BitsStr<false, Str..., '\0'>::width, false> operator""_b() {
     if constexpr (BitsStr<false, Str..., '\0'>::width <=
                   _Bits<BitsStr<false, Str..., '\0'>::width, false>::MaxNativePrecision) {
-      return BitsStr<false, Str..., '\0'>::val;
+      return _Bits<BitsStr<false, Str..., '\0'>::width, false>{BitsStr<false, Str..., '\0'>::val};
     } else {
-      return mpz_class{BitsStr<false, Str..., '\0'>::str};
+      return _Bits<BitsStr<false, Str..., '\0'>::width, false>{mpz_class{BitsStr<false, Str..., '\0'>::str}};
     }
   }
 
@@ -2293,8 +2298,8 @@ namespace udb {
   using SignedBits = _Bits<N, true>;
 
   // special values
-  static constexpr Bits<65> UNDEFINED_LEGAL = 0x10000000000000000_b;
-  static constexpr Bits<66> UNDEFINED_LEGAL_DETERMINISTIC = 0x20000000000000000_b;
+  static constexpr _PossiblyUnknownBits<64, false> UNDEFINED_LEGAL;
+  static constexpr _PossiblyUnknownBits<64, false> UNDEFINED_LEGAL_DETERMINISTIC;
 
   template <unsigned N>
   using PossiblyUnknownBits = _PossiblyUnknownBits<N, false>;
@@ -2339,6 +2344,8 @@ namespace udb {
 
     // width must always be supplied
     _PossiblyUnknownRuntimeBits() = delete;
+    constexpr _PossiblyUnknownRuntimeBits(const _PossiblyUnknownRuntimeBits& other) : m_val(other.m_val), m_width(other.m_width) {}
+    constexpr _PossiblyUnknownRuntimeBits(_PossiblyUnknownRuntimeBits&& other) : m_val(std::move(other.m_val)), m_width(std::move(other.m_width)) {}
 
     constexpr _PossiblyUnknownRuntimeBits(unsigned width) : m_width(width) {}
 
@@ -2348,13 +2355,11 @@ namespace udb {
       apply_mask();
     }
 
-    _PossiblyUnknownRuntimeBits(const _PossiblyUnknownRuntimeBits &initial_value)
-        : m_val(initial_value.value()), m_width(initial_value.m_width) {}
-
-    template <unsigned OtherMaxN>
-      requires(OtherMaxN <= MaxN)
-    _PossiblyUnknownRuntimeBits(const _PossiblyUnknownRuntimeBits<OtherMaxN, Signed> &initial_value)
-        : m_val(initial_value.value()), m_width(initial_value.m_width) {
+    template <template <unsigned, bool> class RhsBitsType, unsigned RhsN, bool RhsSigned>
+      requires (BitsType<RhsBitsType<RhsN, RhsSigned>>)
+    _PossiblyUnknownRuntimeBits(const RhsBitsType<RhsN, RhsSigned>& other)
+      : m_val(other), m_width(other.width())
+    {
       apply_mask();
     }
 
@@ -2364,14 +2369,25 @@ namespace udb {
         : m_val(value, unknown_mask.get()), m_width(width) {}
 
    public:
-    template <bool _Signed = Signed>
-      requires(_Signed == false)
-    _PossiblyUnknownRuntimeBits<MaxN, true> make_signed() const {
-      return _PossiblyUnknownRuntimeBits<MaxN, true>{sign_extend(m_val.get()), m_width};
+    _PossiblyUnknownRuntimeBits &operator=(const _PossiblyUnknownRuntimeBits& rhs) {
+      if (&rhs == this) {
+        return *this;
+      }
+      m_val = rhs;
+      apply_mask();
+      return *this;
     }
-    template <bool _Signed = Signed>
-      requires(_Signed == true)
-    const _PossiblyUnknownRuntimeBits<MaxN, true> &make_signed() const {
+
+    template <template <unsigned, bool> class RhsBitsType, unsigned RhsN, bool RhsSigned>
+      requires (BitsType<RhsBitsType<RhsN, RhsSigned>>)
+    _PossiblyUnknownRuntimeBits &operator=(const RhsBitsType<RhsN, RhsSigned> &rhs) {
+      if constexpr (std::same_as<RhsBitsType<RhsN, RhsSigned>, _PossiblyUnknownRuntimeBits>) {
+        if (&rhs == this) {
+          return *this;
+        }
+      }
+      m_val = rhs;
+      apply_mask();
       return *this;
     }
 
@@ -2510,42 +2526,6 @@ namespace udb {
     _PossiblyUnknownRuntimeBits operator~() { return {~m_val, m_width}; }
 
     _PossiblyUnknownRuntimeBits operator-() { return {-m_val, m_width}; }
-
-#define RUNTIME_BITS_ASSIGN_OP(op)                                                      \
-  template <unsigned N, bool _Signed>                                                   \
-  _PossiblyUnknownRuntimeBits &operator op(const _Bits<N, _Signed> &other) {            \
-    m_val op other;                                                                     \
-    return *this;                                                                       \
-  }                                                                                     \
-                                                                                        \
-  _PossiblyUnknownRuntimeBits &operator op(const _PossiblyUnknownRuntimeBits & other) { \
-    m_val op other.m_val;                                                               \
-    return *this;                                                                       \
-  }                                                                                     \
-                                                                                        \
-  template <std::integral IntType>                                                      \
-  _PossiblyUnknownRuntimeBits &operator op(const IntType & other) {                     \
-    m_val op other;                                                                     \
-    return *this;                                                                       \
-  }
-
-    RUNTIME_BITS_ASSIGN_OP(|=)
-    RUNTIME_BITS_ASSIGN_OP(&=)
-    RUNTIME_BITS_ASSIGN_OP(^=)
-    RUNTIME_BITS_ASSIGN_OP(+=)
-    RUNTIME_BITS_ASSIGN_OP(-=)
-    RUNTIME_BITS_ASSIGN_OP(*=)
-    RUNTIME_BITS_ASSIGN_OP(/=)
-    RUNTIME_BITS_ASSIGN_OP(%=)
-
-#undef RUNTIME_BITS_ASSIGN_OP
-
-    template <typename PossiblyUnknownBitsCompatibleType>
-    _PossiblyUnknownRuntimeBits &operator=(const PossiblyUnknownBitsCompatibleType &rhs) {
-      m_val = rhs;
-      apply_mask();
-      return *this;
-    }
 
    private:
     _PossiblyUnknownBits<MaxN, Signed> m_val;

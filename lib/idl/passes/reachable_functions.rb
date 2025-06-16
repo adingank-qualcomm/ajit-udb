@@ -30,9 +30,18 @@ module Idl
           end
         end
 
+        symtab.push(self)
+        tvals.each_with_index do |tval, idx|
+          symtab.add(func_def_type.template_names[idx], Var.new(func_def_type.template_names[idx], func_def_type.template_types(symtab)[idx], tval, template_index: idx, function_name: name))
+        end
+        func_def_type.func_def_ast.return_type_nodes.each do |rt|
+          fns.concat(rt.reachable_functions(symtab, cache))
+        end
+
         arg_nodes.each do |a|
           fns.concat(a.reachable_functions(symtab, cache))
         end
+        symtab.pop
 
         unless func_def_type.builtin? || func_def_type.generated?
           avals = func_def_type.apply_arguments(body_symtab, arg_nodes, symtab, self)

@@ -26,7 +26,8 @@ namespace udb {
 <%# need to get symtab at function scope -%>
 <%- cfg_arch.reachable_functions.each do |func| -%>
 <%- next if func.builtin? || func.generated? -%>
-<%- next unless func.templated? || func.constexpr?(cfg_arch.symtab) # non-templated functions come next -%>
+<%- next if func.constexpr?(cfg_arch.symtab) # constexpr are defined in the class -%>
+<%- next unless func.templated? # non-templated functions come next -%>
 <%- symtab = cfg_arch.symtab.global_clone.push(func) -%>
 
 <%- if func.name == "ary_includes?" -%>

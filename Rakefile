@@ -106,7 +106,7 @@ end
 # rule to generate standard for any configurations with an overlay
 rule %r{#{$root}/.stamps/resolve-.+\.stamp} => proc { |tname|
   cfg_name = File.basename(tname, ".stamp").sub("resolve-", "")
-  raise "Missing gen/cfgs/#{tname}" unless File.exist?("#{$root}/cfgs/#{cfg_name}.yaml")
+  raise "Missing gen/cfgs/#{cfg_name}" unless File.exist?("#{$root}/cfgs/#{cfg_name}.yaml")
 
   cfg_path = "#{$root}/cfgs/#{cfg_name}.yaml"
   cfg = Config.create(cfg_path)
@@ -236,6 +236,15 @@ namespace :test do
     puts "Checking arch files against schema.."
     Architecture.new("#{$root}/gen/resolved_arch/_").validate(show_progress: true)
     puts "All files validate against their schema"
+  end
+
+  task :cfgs do
+    Dir.glob($root / "cfgs" / "*.yaml") do |cfg_file|
+      cfg_name = File.basename(cfg_file, ".yaml")
+      if YAML.load_file(cfg_file)["name"] != cfg_name
+        raise "Config name does not match file name in #{cfg_file}"
+      end
+    end
   end
 
   task idl: ["#{$root}/.stamps/resolve-rv32.stamp", "#{$root}/.stamps/resolve-rv64.stamp"]  do
@@ -410,6 +419,7 @@ namespace :test do
     Rake::Task["test:idl_compiler"].invoke
     Rake::Task["test:lib"].invoke
     Rake::Task["test:schema"].invoke
+    Rake::Task["test:cfgs"].invoke
     Rake::Task["test:idl"].invoke
     Rake::Task["test:inst_encodings"].invoke
   end

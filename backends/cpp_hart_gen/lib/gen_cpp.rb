@@ -171,7 +171,7 @@ module Idl
     def gen_return_type(symtab)
       if templated?
         template_names.each_with_index do |tname, idx|
-          symtab.add!(tname, Var.new(tname, template_types(symtab)[idx]))
+          symtab.add!(tname, Var.new(tname, template_types(symtab)[idx], template_index: idx, function_name: name))
         end
       end
 
@@ -357,9 +357,19 @@ module Idl
       t = type(symtab)
 
       if w == :unknown
-        "#{' ' * indent}_RuntimeBits<#{symtab.cfg_arch.possible_xlens.max}, #{t.signed?}>{#{v}_b, __UDB_XLEN}"
+        # the only time width can be unknown with an int literal is if it is MXLEN,
+        # so we use that as the runtime width
+        if v.is_a?(UnknownLiteral)
+          "#{' ' * indent}_PossiblyUnknownRuntimeBits<#{symtab.cfg_arch.possible_xlens.max}, #{t.signed?}>{#{v.known_value}_b, __UDB_XLEN, #{v.unknown_mask}_b}"
+        else
+          "#{' ' * indent}_RuntimeBits<#{symtab.cfg_arch.possible_xlens.max}, #{t.signed?}>{#{v}_b, __UDB_XLEN}"
+        end
       else
-        "#{' ' * indent}_Bits<#{w}, #{t.signed?}>{#{v}_b}"
+        if v.is_a?(UnknownLiteral)
+          "#{' ' * indent}_PossiblyUnknownBits<#{w}, #{t.signed?}>{#{v.known_value}_b, #{v.unknown_mask}_b}"
+        else
+          "#{' ' * indent}_Bits<#{w}, #{t.signed?}>{#{v}_b}"
+        end
       end
     end
   end
@@ -496,17 +506,17 @@ module Idl
         result = ""
         value_result = value_try do
           bits_expression.value(symtab)
-          result = "#{' '*indent}Bits<#{bits_expression.gen_cpp(symtab, 0, indent_spaces:)}>"
+          result = "#{' '*indent}PossiblyUnknownBits<#{bits_expression.value(symtab)}>"
         end
         value_else(value_result) do
           if bits_expression.constexpr?(symtab)
-            result = "#{' '*indent}Bits<#{bits_expression.gen_cpp(symtab)}>"
+            result = "#{' '*indent}PossiblyUnknownBits<#{bits_expression.gen_cpp(symtab)}.get()>"
           elsif bits_expression.max_value(symtab).nil?
-            result = "#{' '*indent}Bits<BitsInfinitePrecision>"
+            result = "#{' '*indent}PossiblyUnknownBits<BitsInfinitePrecision>"
           else
             max = bits_expression.max_value(symtab)
             max = "BitsInfinitePrecision" if max == :unknown
-            result = "#{' '*indent}_RuntimeBits<#{max}, false>"
+            result = "#{' '*indent}_PossiblyUnknownRuntimeBits<#{max}, false>"
           end
         end
         result

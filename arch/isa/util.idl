@@ -115,7 +115,7 @@ function count_leading_zeros {
     or N if value is zero.
   }
   body {
-    for (U32 i=0; i < N; i++) {
+    for (Bits<bit_length(N)> i=0; i < N; i++) {
       if (value[N - 1 - i] == 1) {
         return i;
       }

@@ -459,12 +459,30 @@ class ConfiguredArchitecture < Architecture
         end
       end
 
-      # now add everything that is not mandatory or implied by mandatory, if additional extensions are not allowed
+      # now add everything that is not mandatory or implied by mandatory, if additional extensions
+      # are not allowed
       unless @config.additional_extensions_allowed?
         extensions.each do |ext|
           ext.versions.each do |ext_ver|
+            # check if ext_ver is mandatory
             next if mandatory_extension_reqs.any? { |ext_req| ext_req.satisfied_by?(ext_ver) }
-            next if mandatory_extension_reqs.any? { |ext_req| ext_req.extension.implies.include?(ext_ver) }
+
+            # check if ext_ver is implied by mandatory
+            next if ext_ver.implied_by_with_condition.any? do |hsh|
+              implying_ext_ver = hsh[:ext_ver]
+              cond = hsh[:cond]
+
+              # implying ext_ver is mandatory
+              mandatory_extension_reqs.any? { |ext_req| ext_req.satisfied_by?(implying_ext_ver) } && \
+              # and condition is true for the config
+              cond.satisfied_by? do |cond_ext_req|
+                mandatory_extension_reqs.any? do |mand_ext_req|
+                  mand_ext_req.satisfying_versions.any? do |mand_ext_ver|
+                    cond_ext_req.satisfied_by?(mand_ext_ver)
+                  end
+                end
+              end
+            end
 
             @transitive_prohibited_extension_versions << ext_ver
           end

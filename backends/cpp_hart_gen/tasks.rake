@@ -22,6 +22,13 @@ OPTION_STR = <<~DESC_OPTIONS.freeze
               CONFIG can either be the name, excluding extension '.yaml', of a file under cfgs/
               or the (absolute or relative) path to a config file.
     * BUILD_NAME: Name of the build. Required if CONFIG is a list. Otherwise, BUILD_NAME will equal CONFIG.
+    * BUILD_TYPE: Compiler options. Valid types are:
+                  "asan"     : address sanitizer build
+                  "debug"    : no optimizations, debug info added
+                  "fastdebug": optimizations, debug info added
+                  "release"  : optimizations, no debug info
+
+                  Default is "fastdebug"
 DESC_OPTIONS
 
 HELP = <<~DESC.freeze
@@ -224,7 +231,7 @@ def configs_build_name
   if configs.include?("all")
     raise ArgumentError, "'all' was specified with another config name" unless configs.size == 1
 
-    configs = Dir.glob("#{$root}/cfgs/*").map { |path| File.basename(path, ".yaml") }
+    configs = Dir.glob("#{$root}/cfgs/*.yaml").map { |path| File.basename(path, ".yaml") }
   end
 
   configs.each do |config|
@@ -373,6 +380,8 @@ end
 namespace :test do
   task cpp_hart: "gen:cpp_hart" do
     _, build_name = configs_build_name
+
+    Rake::Task["#{CPP_HART_GEN_DST}/#{build_name}/CMakeLists.txt"].invoke
 
     Rake::Task["#{CPP_HART_GEN_DST}/#{build_name}/build/Makefile"].invoke
 

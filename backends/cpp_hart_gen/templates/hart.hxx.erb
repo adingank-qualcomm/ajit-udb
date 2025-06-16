@@ -171,7 +171,7 @@ namespace udb {
         std::map<ExtensionName, Version> implemented_exts;
 
         for (auto ext : ext_ver_list) {
-          implemented_exts.emplace(ExtensionName::from_s(ext[0]), ext[1]);
+          implemented_exts.emplace(ExtensionName::from_s(ext[0].get<std::string>()), ext[1]);
         }
         for (auto ext : ext_ver_list) {
           <%- cfg_arch.extensions.each do |ext| -%>
@@ -180,16 +180,18 @@ namespace udb {
           if ((ext[0] == "<%= ext_ver.name %>") && (Version{ext[1]} == Version{"<%= ext_ver.version_str %>"sv})) {
           <%-       ext_ver.implications.each do |implied_ext_ver_and_cond| -%>
             <%-       unless implied_ext_ver_and_cond[:cond].empty? -%>
-            auto implemented = [this](const std::string_view& ext_name, const std::string_view& req) -> bool {
-              for (const auto& pair : implemented_ext) {
-                if ((pair.first == ExtensionName::from_s(ext_name)) && (VersionRequirement(req).satisfied_by(Version(pair.second)))) {
-                  return true;
+            {
+              auto implemented = [this, &implemented_exts](const std::string_view& ext_name, const std::string_view& req) -> bool {
+                for (const auto& pair : implemented_exts) {
+                  if ((pair.first == ExtensionName::from_s(ext_name)) && (VersionRequirement(req).satisfied_by(Version(pair.second)))) {
+                    return true;
+                  }
                 }
+                return false;
+              };
+              if (<%= implied_ext_ver_and_cond[:cond].to_cxx { |ext_name, req| "implemented(\"#{ext_name}\"sv, \"#{req}\"sv)" } %>) {
+                implied_exts.push_back({ExtensionName::<%= implied_ext_ver_and_cond[:ext_ver].name %>, Version{"<%= implied_ext_ver_and_cond[:ext_ver].version_str %>"sv}});
               }
-              return false;
-            };
-            if (<%= implied_ext_ver_and_cond[:cond].to_cxx { |ext_name, req| "implemented(\"#{ext_name}\"sv, \"#{req}\"sv)" } %>) {
-              implied_exts.push_back({ExtensionName::<%= implied_ext_ver_and_cond[:ext_ver].name %>, Version{"<%= implied_ext_ver_and_cond[:ext_ver].version_str %>"sv}});
             }
             <%-       else -%>
             implied_exts.push_back({ExtensionName::<%= implied_ext_ver_and_cond[:ext_ver].name %>, Version{"<%= implied_ext_ver_and_cond[:ext_ver].version_str %>"sv}});
@@ -256,8 +258,6 @@ namespace udb {
         }
         return m_xregs[num].get();
       }
-
-      // XRegister<MXLEN>& xregRef(unsigned num) { return m_xregs[num]; }
 
       void set_xreg(unsigned num, uint64_t value) override {
         if (num >= 32) {
@@ -373,7 +373,7 @@ namespace udb {
       XReg m_pc;
       XReg m_next_pc;
       InstBase* m_cur_inst;
-      std::array<XRegister<MXLEN>, 32> m_xregs;
+      std::array<PossiblyUnknownBits<MXLEN>, 32> m_xregs;
       std::bitset<32> m_xregs_unknown;
 
       <%= name_of(:params, cfg_arch) %> m_params;

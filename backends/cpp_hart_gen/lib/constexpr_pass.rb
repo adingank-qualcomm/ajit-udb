@@ -13,8 +13,9 @@ module Idl
   class IdAst
     def constexpr?(symtab)
       sym = symtab.get(name)
-      return true if sym.nil?
+      return true if sym.nil? # assume symbols that aren't found are locals
       return true if sym.is_a?(Type)
+      return true if sym.template_val?
       return false if sym.value.nil? # assuming undefined syms are local (be sure to type check first!!)
 
       if sym.param?
@@ -30,7 +31,9 @@ module Idl
     def constexpr?(symtab) = false
   end
   class FunctionCallExpressionAst
-    def constexpr?(symtab) = false # conservative, can do better...
+    def constexpr?(symtab)
+      children.all? { |child| child.constexpr?(symtab) } && func_type(symtab).func_def_ast.constexpr?(symtab)
+    end
   end
   class CsrFieldReadExpressionAst
     def constexpr?(symtab) = false
@@ -53,7 +56,20 @@ module Idl
       return false if builtin?
       return false if generated? # might actually know this in some cases...
 
-      body.constexpr?(symtab)
+      if templated?
+        symtab = symtab.global_clone
+        symtab.push(self)
+
+        template_names.each_with_index do |tname, idx|
+          symtab.add!(tname, Var.new(tname, template_types(symtab)[idx], template_index: idx, function_name: name))
+        end
+      end
+
+      result = body.constexpr?(symtab)
+
+      symtab.release if templated?
+
+      result
     end
   end
 end

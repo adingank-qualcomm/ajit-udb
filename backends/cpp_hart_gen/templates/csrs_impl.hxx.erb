@@ -46,34 +46,30 @@ void <%= name_of(:csr_field, cfg_arch, csr.name, field.name) %><SocType>::reset(
   <%- if ast.nil? -%>
   <%- v = field.reset_value -%>
   <%- if v == "UNDEFINED_LEGAL" -%>
-  m_undefined = true;
+  <%- if cfg_arch.multi_xlen? && field.dynamic_location? -%>
+  _hw_write("0b<%= 'x' * max_width %>"_xb, m_hart->xlen());
+  <%- else -%>
+  _hw_write("0b<%= 'x' * max_width %>"_xb);
+  <%- end -%>
   <%- else -%>
   <%- if cfg_arch.multi_xlen? && field.dynamic_location? -%>
-  _hw_write(<%= v %>ULL, m_hart->xlen());
+  _hw_write(<%= v %>_b, m_hart->xlen());
   <%- else -%>
-  _hw_write(<%= v %>ULL);
+  _hw_write(<%= v %>_b);
   <%- end -%>
   <%- end -%>
   <%- else -%>
   auto val_fn = [this]() ->
-    <%- if field.could_be_undefined? -%>
-    PossiblyUnknownBits<<%= max_width + 1 %>>
-    <%- else -%>
-    Bits<<%= max_width + 1 %>>
-    <%- end -%>
+    PossiblyUnknownBits<<%= max_width %>>
   {
     <%= ast.gen_cpp(cfg_arch.symtab, 8) %>
   };
   auto val = val_fn();
-  if (val == UNDEFINED_LEGAL) {
-    m_undefined = true;
-  } else {
-    <%- if cfg_arch.multi_xlen? && field.dynamic_location? -%>
-    _hw_write(val, m_hart->xlen());
-    <%- else -%>
-    _hw_write(val);
-    <%- end -%>
-  }
+  <%- if cfg_arch.multi_xlen? && field.dynamic_location? -%>
+  _hw_write(val, m_hart->xlen());
+  <%- else -%>
+  _hw_write(val);
+  <%- end -%>
   <%- end -%>
 }
 

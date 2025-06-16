@@ -144,7 +144,7 @@ add_executable(test_bits
   ${CMAKE_SOURCE_DIR}/test/test_bits.cpp
 )
 target_include_directories(test_bits PUBLIC ${CMAKE_SOURCE_DIR}/include)
-target_link_libraries(test_bits PRIVATE hart Catch2::Catch2WithMain)
+target_link_libraries(test_bits PRIVATE Catch2::Catch2WithMain fmt::fmt -lgmp -lgmpxx)
 
 add_executable(test_util
   ${CMAKE_SOURCE_DIR}/test/test_util.cpp

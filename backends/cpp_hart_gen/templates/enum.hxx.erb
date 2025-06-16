@@ -7,7 +7,11 @@
 
 #include <cstdint>
 #include <concepts>
-#include <string>
+#include <string_view>
+
+#include "udb/cpp_exceptions.hpp"
+
+using namespace std::literals;
 
 namespace udb {
   <%- enums.each do |enum| -%>
@@ -26,7 +30,29 @@ namespace udb {
     constexpr <%= enum.name %>() = default;
     constexpr <%= enum.name %>(const <%= underlying_type %>& value) : m_value(value) {}
 
-    static const <%= enum.name %> from_s(const std::string& value);
+    static constexpr <%= enum.name %> from_s(const std::string_view& value)
+    {
+      <%- element_values.each_index do |idx| -%>
+      <%= idx.zero? ? "" : "else" %> if (value == "<%= element_names[idx] %>"sv) {
+        return <%= element_values[idx] %>;
+      }
+      <%- end -%>
+      else {
+        throw DbError("Bad enum value");
+      }
+    }
+
+    static const <%= enum.name %> from_s(const std::string& value)
+    {
+      <%- element_values.each_index do |idx| -%>
+      <%= idx.zero? ? "" : "else" %> if (value == "<%= element_names[idx] %>"sv) {
+        return <%= element_values[idx] %>;
+      }
+      <%- end -%>
+      else {
+        throw DbError("Bad enum value");
+      }
+    }
 
     <%= underlying_type %> m_value;
     <%= underlying_type %> value() const { return m_value; }
@@ -61,7 +87,7 @@ namespace udb {
 
   };
 
-  const std::string to_s(const <%= enum.name %>& value);
+  const std::string_view to_s(const <%= enum.name %>& value);
 
   template <std::integral Type>
   constexpr Type operator<<(const Type& lhs, const <%= enum.name %>& rhs) {
