@@ -5,8 +5,8 @@ require "sorbet-runtime"
 T.bind(self, T.all(Rake::DSL, Object))
 extend T::Sig
 
-require 'pathname'
-require 'erb'
+require "pathname"
+require "erb"
 
 Encoding.default_external = "UTF-8"
 
@@ -119,18 +119,18 @@ end
 
 sig { params(test_files: T::Array[String]).returns(String) }
 def make_test_cmd(test_files)
-  "-Ilib:test -w -e 'require \"minitest/autorun\"; #{test_files.map{ |f| "require \"#{f}\""}.join("; ")}' --"
+  "-Ilib:test -w -e 'require \"minitest/autorun\"; #{test_files.map { |f| "require \"#{f}\"" }.join("; ")}' --"
 end
 
 namespace :test do
 
   # "Run the cross-validation against LLVM"
   task :llvm do
-      begin
-        sh "/opt/venv/bin/python3 -m pytest ext/auto-inst/test_parsing.py -v"
-      rescue => e
-        raise unless e.message.include?("status (5)") # don't fail on skipped tests
-    end
+    begin
+    sh "/opt/venv/bin/python3 -m pytest ext/auto-inst/test_parsing.py -v"
+  rescue => e
+    raise unless e.message.include?("status (5)") # don't fail on skipped tests
+  end
   end
   # "Run the IDL compiler test suite"
   task :idl_compiler do
@@ -251,7 +251,7 @@ namespace :test do
     cfg_files.each do |cfg_file|
       cfg_name = File.basename(cfg_file, ".yaml")
       puts "Validating #{cfg_name}..."
-      unless system("#{$root}/bin/udb validate cfg #{cfg_file}")
+      unless system "bundle exec udb validate cfg #{cfg_file}"
         failed_cfgs << cfg_name
       end
     end
@@ -420,7 +420,7 @@ end
 
 # AMOCAS instruction generation from Zabha layout (supports both Zabha and Zacas)
 # Zabha variants (b, h) -> generated in Zabha directory
-["b", "h", "w", "d", "q" ].each do |size|
+["b", "h", "w", "d", "q"].each do |size|
   # Determine target extension directory based on size
   extension_dir = %w[w d q].include?(size) ? "Zacas" : "Zabha"
 
