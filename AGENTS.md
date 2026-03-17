@@ -1,6 +1,6 @@
 <!--
-SPDX-FileCopyrightText: 2025 Contributors to the RISC-V Unified Database
-SPDX-License-Identifier: CC-BY-4.0
+Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+SPDX-License-Identifier: BSD-3-Clause-Clear
 -->
 
 # CLAUDE.md
