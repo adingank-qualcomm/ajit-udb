@@ -80,7 +80,6 @@ Key data types and their locations:
 - **Instructions**: `spec/std/isa/inst/<Extension>/<name>.yaml`
 - **CSRs**: `spec/std/isa/csr/<Extension>/<name>.yaml`
 - **Profiles**: `spec/std/isa/profile/`, `spec/std/isa/profile_release/`, `spec/std/isa/profile_family/`
-- **Processor Certificates**: `spec/std/isa/proc_cert_class/`, `spec/std/isa/proc_cert_model/`
 
 Some files are auto-generated from `.layout` ERB templates (e.g., AMO variants, HPM counters, PMP registers). Run `./do gen:arch` to regenerate them. Auto-generated files are read-only (chmod 0444).
 
@@ -109,7 +108,6 @@ IDL is compiled by the `idlc` gem. The compiler performs type checking and can g
 Each backend has a `tasks.rake` file that registers Rake tasks. Key backends:
 - `cfg_html_doc` — HTML documentation for a specific config
 - `cpp_hart_gen` — C++ ISS (Instruction Set Simulator) hart model
-- `portfolio` — Profile/certificate PDF documents
 - `prm_pdf` — Processor Requirements Manual PDF
 - `instructions_appendix` — Instruction appendix AsciiDoc/PDF
 
