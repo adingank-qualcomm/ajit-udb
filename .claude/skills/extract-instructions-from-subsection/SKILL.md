@@ -66,12 +66,12 @@ The prose explicitly signals pseudoinstructions with the phrase "assembler pseud
 
 Any token introduced by "pseudoinstruction" (with or without "assembler") must be excluded, even if it appears elsewhere in the subsection outside a pseudoinstruction context. Collect all pseudoinstruction names first, then exclude them from the final list.
 
-**Definitive exclusion list — never treat these as instructions:**
+**The following tokens should never be considered instruction names:**
 `XLEN`, `RV32`, `RV64`, `RV32I`, `RV64I`, `RV128I`, `ISA`, `ABI`, `PC`, `CSR`, `IALIGN`, `BTB`, `RAS`, `FPGA`, `MIPS`, `RISC`, `RISCV`, `RISC-V`, `L`, `M`, `S`, `B`, `J`, `R`, `I`, `U`
 
 Single-letter tokens (`R`, `I`, `S`, `B`, `U`, `J`) are format names, not instructions — exclude them.
 
-Two-letter tokens that are register names (`x0`–`x31`, `rd`, `rs1`, `rs2`) — exclude them.
+Tokens that are register names (`x0`–`x31`, `rd`, `rs1`, `rs2`) — exclude them.
 
 ### 5. Deduplicate and normalize
 

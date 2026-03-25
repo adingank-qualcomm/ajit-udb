@@ -8,7 +8,7 @@ allowed-tools: Read, Glob, Grep, Write, Edit
 Copyright (c) 2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
 SPDX-License-Identifier: BSD-3-Clause
 
-Given a RISC-V instruction name, locate its YAML spec file under `spec/std/isa/inst/`, read the instruction's description, encoding, and any existing `sail()` implementation, then generate a correct IDL `operation()` body using the IDL language defined by the Treetop grammar in `tools/ruby-gems/idlc/lib/idlc/idl.treetop`.
+Given a RISC-V instruction name, locate its YAML spec file under `spec/std/isa/inst/`, read the instruction's description and encoding, then generate a correct IDL `operation()` body using the IDL language defined by the Treetop grammar in `tools/ruby-gems/idlc/lib/idlc/idl.treetop`.
 
 Write the generated IDL code into the `operation()` key of the spec YAML file **only if that key is currently empty**. If `operation()` already has content, write the new IDL code to `/tmp/$ARGUMENT[0].yaml` instead.
 
@@ -38,7 +38,6 @@ Read the full YAML file. Pay close attention to:
 - **`definedBy`**: The extension(s) that define this instruction.
 - **`access`**: Privilege levels at which the instruction is accessible.
 - **`operation()`**: The current value — check whether it is empty (just `|` with no following content before the next key) or already populated.
-- **`sail()`**: If present, the Sail formal semantics — use this as a reference for the intended behavior.
 
 ### 3. Study IDL patterns from reference files
 
@@ -60,6 +59,7 @@ Key IDL language rules (from `tools/ruby-gems/idlc/lib/idlc/idl.treetop`):
 
 **Register access:**
 - `X[reg_name]` — read/write integer register (e.g., `X[xs1]`, `X[xd]`)
+- `f[reg_name]` — read/write floating-point register (e.g., `f[fs1]`, `f[fs2]`, `f[fd]`)
 - `CSR[csr_name].FIELD` — read/write CSR field (e.g., `CSR[misa].M`, `CSR[vstart].VALUE`)
 - `v[vd]` — vector register access
 
@@ -95,7 +95,7 @@ Key IDL language rules (from `tools/ruby-gems/idlc/lib/idlc/idl.treetop`):
 
 ### 4. Generate the IDL operation() body
 
-Using the instruction's description, encoding variables, and sail() reference (if present), write the IDL `operation()` body. Follow these guidelines:
+Using the instruction's description and encoding variables, write the IDL `operation()` body. Follow these guidelines:
 
 1. **Extension check first**: If the instruction is defined by an optional extension (not base I), add a check at the top:
    ```
@@ -112,7 +112,7 @@ Using the instruction's description, encoding variables, and sail() reference (i
    XReg src2 = X[xs2];
    ```
 
-4. **Implement the behavior**: Translate the description and sail() semantics into IDL statements. Use bit operations, arithmetic, and control flow as needed.
+4. **Implement the behavior**: Translate the description into IDL statements. Use bit operations, arithmetic, and control flow as needed.
 
 5. **Write results**: Assign to destination registers last:
    ```
@@ -142,7 +142,7 @@ Check the `operation()` key in the YAML file:
 
 **If writing to the spec YAML file:**
 
-Use the Edit tool to replace the empty `operation(): |` block. The replacement must preserve the YAML structure — the IDL lines must be indented with 2 spaces, and the next top-level key (e.g., `sail():`) must remain at column 0.
+Use the Edit tool to replace the empty `operation(): |` block. The replacement must preserve the YAML structure — the IDL lines must be indented with 2 spaces, and the next top-level key must remain at column 0.
 
 Example — replacing an empty operation():
 ```
