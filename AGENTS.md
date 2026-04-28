@@ -3,9 +3,9 @@ Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
 SPDX-License-Identifier: BSD-3-Clause-Clear
 -->
 
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Gen AI agents when working with code in this repository.
 
 ## Overview
 
@@ -13,11 +13,13 @@ The RISC-V Unified Database (UnifiedDB/UDB) is a repository that holds all infor
 
 **Important:** This project is under rapid development. Schemas and APIs change frequently. Data in `spec/` is a work in progress.
 
-## Environment Setup
+## Setup
 
-All tools run inside a container (Docker or Podman). The `./bin/setup` script handles container detection and setup automatically. When inside a devcontainer, commands run natively.
-
-The `./do` script is the primary entry point — it wraps `bundle exec rake` with container context.
+```bash
+bin/setup    # one-command setup: installs mise, all tool versions, all dependencies,
+             # git hooks, and walks through C++ toolchain configuration
+bin/doctor   # verify the environment is correctly set up (run after bin/setup)
+```
 
 ## Common Commands
 
@@ -62,7 +64,7 @@ The `./do` script is the primary entry point — it wraps `bundle exec rake` wit
 - `backends/` — Artifact generators (documents, simulators, etc.)
 - `tools/ruby-gems/` — Ruby gem libraries
 - `tools/test/` — Test infrastructure
-- `bin/` — Wrapper scripts for container-aware execution
+- `bin/` — Wrapper scripts; run natively with mise-managed tools (container is only used for the RISC-V cross-toolchain via `bin/chore container`)
 - `gen/` — Generated output (gitignored)
 - `ext/` — Git submodules (riscv-isa-manual, riscv-opcodes, riscv-tests, etc.)
 

@@ -68,15 +68,6 @@ module UdbGen
       desc "Do not generate a long descrption of each CSR field (just a summary table)"
     end
 
-    option :pseudo do
-      T.bind(self, TTY::Option::Parameter::Option)
-      short "-p"
-      long "--p=type"
-      desc "Which pdeudocode(s) to include in the documentation"
-      permit ["sail", "idl", "both"]
-      default "idl"
-    end
-
     option :format do
       T.bind(self, TTY::Option::Parameter::Option)
       short "-f"
@@ -151,7 +142,7 @@ module UdbGen
           when nil
             ">=0"
           when "latest"
-            "=#{ext.versions.max}"
+            "=#{T.must(ext).versions.max}"
           else
             "=#{req}"
           end
@@ -190,7 +181,7 @@ module UdbGen
         "-a imagesdir=#{params[:images]}",
         "-r asciidoctor-diagram",
         "-r idl_highlighter",
-        "-a wavedrom=/opt/node/node_modules/.bin/wavedrom-cli",
+        "-a wavedrom=#{Udb.repo_root}/node_modules/.bin/wavedrom-cli",
         "-o #{pdf_filename}",
         adoc_filename
       ].join(" ")
