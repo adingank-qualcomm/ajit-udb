@@ -6,7 +6,7 @@ allowed-tools: Read, Glob, Grep, Write, Edit
 ---
 
 Copyright (c) 2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
-SPDX-License-Identifier: BSD-3-Clause
+SPDX-License-Identifier: BSD-3-Clause-Clear
 
 Given a RISC-V instruction name, locate its YAML spec file under `spec/std/isa/inst/`, read the instruction's description and encoding, then generate a correct IDL `operation()` body using the IDL language defined by the Treetop grammar in `tools/ruby-gems/idlc/lib/idlc/idl.treetop`.
 
@@ -61,7 +61,7 @@ Key IDL language rules (from `tools/ruby-gems/idlc/lib/idlc/idl.treetop`):
 - `X[reg_name]` — read/write integer register (e.g., `X[xs1]`, `X[xd]`)
 - `f[reg_name]` — read/write floating-point register (e.g., `f[fs1]`, `f[fs2]`, `f[fd]`)
 - `CSR[csr_name].FIELD` — read/write CSR field (e.g., `CSR[misa].M`, `CSR[vstart].VALUE`)
-- `v[vd]` — vector register access
+- `V[vd]` — vector register access
 
 **Bit operations:**
 - Bit slice: `expr[msb:lsb]` (e.g., `src1[MXLEN-1:0]`)

@@ -33,29 +33,29 @@ access:
   vu: always
 data_independent_timing: false
 operation(): |
-  # Get current vector state
+  # vmv.v.i: Copy sign-extended 5-bit immediate to all body elements of vd
+
+  # Raise IllegalInstruction if V extension is not implemented
+  if (implemented?(ExtensionName::V) && (CSR[misa].V == 1'b0)) {
+    raise (ExceptionCode::IllegalInstruction, mode(), $encoding);
+  }
+
+  # Get current vector configuration state
   VectorState state = vector_state();
   VectorLmulType lmul_type = state.lmul_type;
 
-  XReg vlen = VLEN;
-  XReg vlmax;
-  if (lmul_type == VectorLmulType::Multiply) {
-    vlmax = (vlen << state.log2_lmul) >> state.log2_sew;
-  } else {
-    # (lmul_type == VectorLmulType::Divide)
-    vlmax = (vlen >> state.log2_lmul) >> state.log2_sew;
-  }
-
-  # Sign-extend the 5-bit immediate to XLEN bits for use in loop
+  # Sign-extend the 5-bit immediate to XLEN bits (SEW-wide value written per element)
   XReg sext_imm = $signed(imm);
 
-  # Iterate through elements from vstart to vl
+  # Iterate over body elements: from vstart up to (but not including) vl
   for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    # Compute the bit range for element i within the vector register
     U32 start_bit_pos = i * state.sew;
     U32 end_bit_pos = start_bit_pos + state.sew - 1;
 
-    # Write the sign-extended immediate (truncated to SEW bits) to the element
+    # Write sign-extended immediate truncated to SEW bits into element i of vd
     V[vd][end_bit_pos:start_bit_pos] = sext_imm[state.sew-1:0];
   }
 
+  # Clear vstart after instruction completes
   CSR[vstart].VALUE = 0;
