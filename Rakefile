@@ -31,7 +31,6 @@ require "minitest/test_task"
 
 require "udb/architecture"
 require "udb/portfolio_design"
-require "udb/proc_cert_design"
 
 $logger = Logger.new(STDOUT, datetime_format: "%v %r")
 $logger.level = Logger::INFO
@@ -43,11 +42,6 @@ directory "#{$root}/.stamps"
 
 # Load and execute Rakefile for each backend.
 Dir.glob("#{$root}/backends/*/tasks.rake") do |rakefile|
-  load rakefile
-end
-
-# load and execute Rakefile for each gem
-Dir.glob("#{$root}/tools/ruby-gems/*/Rakefile") do |rakefile|
   load rakefile
 end
 
@@ -68,7 +62,7 @@ namespace :chore do
   desc "Update golden instruction appendix"
   task :update_golden_appendix do
     Rake::Task["gen:instruction_appendix_adoc"].invoke
-    sh "mv #{$root}/gen/instructions_appendix/all_instructions.adoc #{$root}/backends/instructions_appendix/all_instructions.golden.adoc"
+    sh "mv #{$root}/gen/instructions_appendix/all_instructions.adoc #{$root}/tests/golden/all_instructions.golden.adoc"
   end
 end
 
@@ -81,7 +75,7 @@ namespace :gen do
     end
   end
 
-  desc "Resolve the configuration CFG in arch/, and write it to gen/resolved_arch/<CFG>. Default CFG is the standard, \"_\"."
+  desc "Resolve the configuration CFG with spec/ and write it to gen/resolved_arch/<CFG>. Default CFG is the standard \"_\"."
   task "resolved_arch" do
     cfg = ENV["CFG"]
     if cfg.nil?
@@ -100,6 +94,12 @@ namespace :gen do
     else
       $resolver.cfg_arch_for(cfg)
     end
+  end
+
+  desc "Resolve schema files and write them to gen/schemas/VERSION/SCHEMA with full $id URLs"
+  task :schemas do
+    $resolver.resolve_schemas
+    puts "Resolved schema files written to gen/schemas/"
   end
 end
 
@@ -151,10 +151,9 @@ namespace :test do
 
   desc "Type-check the Ruby library"
   task :sorbet do
-    Rake::Task["test:idlc:sorbet"].invoke
-    Rake::Task["test:udb:sorbet"].invoke
-    Rake::Task["test:udb_gen:sorbet"].invoke
-    # sh "srb tc @.sorbet-config"
+    Dir.chdir($root) do
+      sh "./bin/bundle exec srb tc"
+    end
   end
 end
 
@@ -165,7 +164,7 @@ end
 
 desc "Clean up all generated files and container"
 task :clobber do
-  warn "Don't run clean using Rake. Run `./do clean` (alias for `./bin/clean`) instead."
+  warn "Don't run clobber using Rake. Run `./do clobber` (alias for `./bin/clobber`) instead."
 end
 
 
@@ -246,7 +245,7 @@ namespace :test do
 
   task :idl do
     cfg = ENV["CFG"]
-    raise "Missing CFG enviornment variable" if cfg.nil?
+    raise "Missing CFG environment variable" if cfg.nil?
 
     print "Parsing IDL code for #{cfg}..."
     cfg_arch = $resolver.cfg_arch_for(cfg)
@@ -436,31 +435,143 @@ end
   end
 end
 
+# LR/SC instruction generation from layouts
+%w[lr sc].each do |op|
+  ["w", "d"].each do |size|
+    aq_rl_variants.each do |variant|
+      file "#{$resolver.std_path}/inst/Zalrsc/#{op}.#{size}#{variant[:suffix]}.yaml" => [
+        "#{$resolver.std_path}/inst/Zalrsc/#{op}.SIZE.AQRL.layout",
+        __FILE__
+      ] do |t|
+        FileUtils.rm_f(t.name)
+        aq = variant[:aq]
+        rl = variant[:rl]
+        erb = ERB.new(File.read($resolver.std_path / "inst/Zalrsc/#{op}.SIZE.AQRL.layout"), trim_mode: "-")
+        erb.filename = "#{$resolver.std_path}/inst/Zalrsc/#{op}.SIZE.AQRL.layout"
+        File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
+        File.chmod(0444, t.name)
+      end
+    end
+  end
+end
+
+# Zalasr load-acquire generation from layout
+zalasr_load_variants = [
+  { suffix: ".aq", rl: false },
+  { suffix: ".aqrl", rl: true }
+]
+
+["b", "h", "w", "d"].each do |size|
+  zalasr_load_variants.each do |variant|
+    file "#{$resolver.std_path}/inst/Zalasr/l#{size}#{variant[:suffix]}.yaml" => [
+      "#{$resolver.std_path}/inst/Zalasr/lSIZE.AQRL.layout",
+      __FILE__
+    ] do |t|
+      FileUtils.rm_f(t.name)
+      rl = variant[:rl]
+      erb = ERB.new(File.read($resolver.std_path / "inst/Zalasr/lSIZE.AQRL.layout"), trim_mode: "-")
+      erb.filename = "#{$resolver.std_path}/inst/Zalasr/lSIZE.AQRL.layout"
+      File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
+      File.chmod(0444, t.name)
+    end
+  end
+end
+
+# Zalasr store-release generation from layout
+zalasr_store_variants = [
+  { suffix: ".rl", aq: false },
+  { suffix: ".aqrl", aq: true }
+]
+
+["b", "h", "w", "d"].each do |size|
+  zalasr_store_variants.each do |variant|
+    file "#{$resolver.std_path}/inst/Zalasr/s#{size}#{variant[:suffix]}.yaml" => [
+      "#{$resolver.std_path}/inst/Zalasr/sSIZE.AQRL.layout",
+      __FILE__
+    ] do |t|
+      FileUtils.rm_f(t.name)
+      aq = variant[:aq]
+      erb = ERB.new(File.read($resolver.std_path / "inst/Zalasr/sSIZE.AQRL.layout"), trim_mode: "-")
+      erb.filename = "#{$resolver.std_path}/inst/Zalasr/sSIZE.AQRL.layout"
+      File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
+      File.chmod(0444, t.name)
+    end
+  end
+end
+
+# MOP.R instruction generation from layout (mop.r.0 through mop.r.31)
+(0..31).each do |n|
+  file "#{$resolver.std_path}/inst/Zimop/mop.r.#{n}.yaml" => [
+    "#{$resolver.std_path}/inst/Zimop/mop.r.N.layout",
+    __FILE__
+  ] do |t|
+    FileUtils.rm_f(t.name)
+    erb = ERB.new(File.read($resolver.std_path / "inst/Zimop/mop.r.N.layout"), trim_mode: "-")
+    erb.filename = "#{$resolver.std_path}/inst/Zimop/mop.r.N.layout"
+    File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
+    File.chmod(0444, t.name)
+  end
+end
+
+# MOP.RR instruction generation from layout (mop.rr.0 through mop.rr.7)
+(0..7).each do |n|
+  file "#{$resolver.std_path}/inst/Zimop/mop.rr.#{n}.yaml" => [
+    "#{$resolver.std_path}/inst/Zimop/mop.rr.N.layout",
+    __FILE__
+  ] do |t|
+    FileUtils.rm_f(t.name)
+    erb = ERB.new(File.read($resolver.std_path / "inst/Zimop/mop.rr.N.layout"), trim_mode: "-")
+    erb.filename = "#{$resolver.std_path}/inst/Zimop/mop.rr.N.layout"
+    File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
+    File.chmod(0444, t.name)
+  end
+end
+
+# C.MOP instruction generation from layout (c.mop.1, c.mop.3, c.mop.5, c.mop.7, c.mop.9, c.mop.11, c.mop.13, c.mop.15)
+[1, 3, 5, 7, 9, 11, 13, 15].each do |n|
+  file "#{$resolver.std_path}/inst/Zcmop/c.mop.#{n}.yaml" => [
+    "#{$resolver.std_path}/inst/Zcmop/c.mop.N.layout",
+    __FILE__
+  ] do |t|
+    FileUtils.rm_f(t.name)
+    erb = ERB.new(File.read($resolver.std_path / "inst/Zcmop/c.mop.N.layout"), trim_mode: "-")
+    erb.filename = "#{$resolver.std_path}/inst/Zcmop/c.mop.N.layout"
+    File.write(t.name, insert_warning(erb.result(binding), t.prerequisites.first))
+    File.chmod(0444, t.name)
+  end
+end
+
+def gen_arch_file(f)
+  FileUtils.rm_f f
+  Rake::Task[f].invoke
+  FileUtils.chmod 0444, f
+end
+
 namespace :gen do
   desc "Generate architecture files from layouts"
   task :arch do
     (3..31).each do |hpm_num|
-      Rake::Task["#{$resolver.std_path}/csr/Zihpm/mhpmcounter#{hpm_num}.yaml"].invoke
-      Rake::Task["#{$resolver.std_path}/csr/Zihpm/mhpmcounter#{hpm_num}h.yaml"].invoke
-      Rake::Task["#{$resolver.std_path}/csr/Zihpm/mhpmevent#{hpm_num}.yaml"].invoke
-      Rake::Task["#{$resolver.std_path}/csr/Zihpm/mhpmevent#{hpm_num}h.yaml"].invoke
+      gen_arch_file("#{$resolver.std_path}/csr/Zihpm/mhpmcounter#{hpm_num}.yaml")
+      gen_arch_file("#{$resolver.std_path}/csr/Zihpm/mhpmcounter#{hpm_num}h.yaml")
+      gen_arch_file("#{$resolver.std_path}/csr/Zihpm/mhpmevent#{hpm_num}.yaml")
+      gen_arch_file("#{$resolver.std_path}/csr/Zihpm/mhpmevent#{hpm_num}h.yaml")
 
-      Rake::Task["#{$resolver.std_path}/csr/Zihpm/hpmcounter#{hpm_num}.yaml"].invoke
-      Rake::Task["#{$resolver.std_path}/csr/Zihpm/hpmcounter#{hpm_num}h.yaml"].invoke
+      gen_arch_file("#{$resolver.std_path}/csr/Zihpm/hpmcounter#{hpm_num}.yaml")
+      gen_arch_file("#{$resolver.std_path}/csr/Zihpm/hpmcounter#{hpm_num}h.yaml")
     end
 
-    Rake::Task["#{$resolver.std_path}/csr/I/mcounteren.yaml"].invoke
-    Rake::Task["#{$resolver.std_path}/csr/S/scounteren.yaml"].invoke
-    Rake::Task["#{$resolver.std_path}/csr/Sscofpmf/scountovf.yaml"].invoke
-    Rake::Task["#{$resolver.std_path}/csr/H/hcounteren.yaml"].invoke
-    Rake::Task["#{$resolver.std_path}/csr/Zicntr/mcountinhibit.yaml"].invoke
+    gen_arch_file("#{$resolver.std_path}/csr/I/mcounteren.yaml")
+    gen_arch_file("#{$resolver.std_path}/csr/S/scounteren.yaml")
+    gen_arch_file("#{$resolver.std_path}/csr/Sscofpmf/scountovf.yaml")
+    gen_arch_file("#{$resolver.std_path}/csr/H/hcounteren.yaml")
+    gen_arch_file("#{$resolver.std_path}/csr/Zicntr/mcountinhibit.yaml")
 
     (0..63).each do |pmpaddr_num|
-      Rake::Task["#{$resolver.std_path}/csr/I/pmpaddr#{pmpaddr_num}.yaml"].invoke
+      gen_arch_file("#{$resolver.std_path}/csr/I/pmpaddr#{pmpaddr_num}.yaml")
     end
 
     (0..15).each do |pmpcfg_num|
-      Rake::Task["#{$resolver.std_path}/csr/I/pmpcfg#{pmpcfg_num}.yaml"].invoke
+      gen_arch_file("#{$resolver.std_path}/csr/I/pmpcfg#{pmpcfg_num}.yaml")
     end
 
     # Generate AMO instruction files
@@ -468,7 +579,7 @@ namespace :gen do
       ["b", "h", "w", "d"].each do |size|
         extension_dir = %w[b h].include?(size) ? "Zabha" : "Zaamo"
         ["", ".aq", ".rl", ".aqrl"].each do |suffix|
-          Rake::Task["#{$resolver.std_path}/inst/#{extension_dir}/#{op}.#{size}#{suffix}.yaml"].invoke
+          gen_arch_file("#{$resolver.std_path}/inst/#{extension_dir}/#{op}.#{size}#{suffix}.yaml")
         end
       end
     end
@@ -479,8 +590,42 @@ namespace :gen do
         # Determine target extension directory based on size
         extension_dir = %w[w d q].include?(size) ? "Zacas" : "Zabha"
 
-        Rake::Task["#{$resolver.std_path}/inst/#{extension_dir}/amocas.#{size}#{suffix}.yaml"].invoke
+        gen_arch_file("#{$resolver.std_path}/inst/#{extension_dir}/amocas.#{size}#{suffix}.yaml")
       end
+    end
+
+    # Generate LR/SC instruction files
+    %w[lr sc].each do |op|
+      ["w", "d"].each do |size|
+        aq_rl_variants.each do |variant|
+          gen_arch_file("#{$resolver.std_path}/inst/Zalrsc/#{op}.#{size}#{variant[:suffix]}.yaml")
+        end
+      end
+    end
+
+    # Generate Zalasr load/store instruction files
+    ["b", "h", "w", "d"].each do |size|
+      zalasr_load_variants.each do |variant|
+        gen_arch_file("#{$resolver.std_path}/inst/Zalasr/l#{size}#{variant[:suffix]}.yaml")
+      end
+      zalasr_store_variants.each do |variant|
+        gen_arch_file("#{$resolver.std_path}/inst/Zalasr/s#{size}#{variant[:suffix]}.yaml")
+      end
+    end
+
+    # Generate MOP.R instruction files (mop.r.0 through mop.r.31)
+    (0..31).each do |n|
+      gen_arch_file("#{$resolver.std_path}/inst/Zimop/mop.r.#{n}.yaml")
+    end
+
+    # Generate MOP.RR instruction files (mop.rr.0 through mop.rr.7)
+    (0..7).each do |n|
+      gen_arch_file("#{$resolver.std_path}/inst/Zimop/mop.rr.#{n}.yaml")
+    end
+
+    # Generate C.MOP instruction files (c.mop.1, c.mop.3, c.mop.5, c.mop.7, c.mop.9, c.mop.11, c.mop.13, c.mop.15)
+    [1, 3, 5, 7, 9, 11, 13, 15].each do |n|
+      gen_arch_file("#{$resolver.std_path}/inst/Zcmop/c.mop.#{n}.yaml")
     end
   end
 
@@ -527,7 +672,7 @@ namespace :gen do
     exit(1)
   end
 
-  desc "Generate config files for profiles"
+  desc "Generate strict config files for profiles"
   task :cfg do
     cfg_arch = $resolver.cfg_arch_for("_")
     FileUtils.mkdir_p $resolver.cfgs_path / "profile"
@@ -543,7 +688,7 @@ namespace :gen do
           # To regenerate, run `./do gen:cfg` in the UDB root directory
           # The data comes from the UDB profile definitions in spec/std/isa/profile/
 
-          #{YAML.dump(profile.to_config)}
+          #{YAML.dump(profile.to_strict_config)}
         YAML
       )
       File.chmod(0444, path)
@@ -566,40 +711,23 @@ namespace :test do
     Udb.logger.warn "Running regression through do/Rake has been deprecated"
     Udb.logger.warn "Try `./bin/regress --all` instead"
   end
+
+  namespace :scripts do
+    desc "Run unit tests for tools/scripts"
+    task :unit do
+      Dir.chdir($root) do
+        sh "#{$root}/bin/ruby -Itools/scripts tools/scripts/test/run.rb"
+      end
+    end
+  end
 end
 
 desc <<~DESC
-  Generate all portfolio-based PDF artifacts (certificates and profiles)
+  Generate all portfolio-based PDF artifacts (profiles)
 DESC
 task :portfolios do
-  portfolio_start_msg("MockProcessor-CRD")
-  Rake::Task["#{$root}/gen/proc_crd/pdf/MockProcessor-CRD.pdf"].invoke
-  portfolio_start_msg("MockProcessor-CTP")
-  Rake::Task["#{$root}/gen/proc_ctp/pdf/MockProcessor-CTP.pdf"].invoke
   portfolio_start_msg("MockProfileRelease")
   Rake::Task["#{$root}/gen/profile/pdf/MockProfileRelease.pdf"].invoke
-  portfolio_start_msg("RVI20-32-CTP")
-  Rake::Task["#{$root}/gen/proc_ctp/pdf/RVI20-32-CTP.pdf"].invoke
-  portfolio_start_msg("RVI20-64-CTP")
-  Rake::Task["#{$root}/gen/proc_ctp/pdf/RVI20-64-CTP.pdf"].invoke
-  portfolio_start_msg("MC100-32-CTP")
-  Rake::Task["#{$root}/gen/proc_ctp/pdf/MC100-32-CTP.pdf"].invoke
-  portfolio_start_msg("MC100-32-CRD")
-  Rake::Task["#{$root}/gen/proc_crd/pdf/MC100-32-CRD.pdf"].invoke
-  portfolio_start_msg("MC100-64-CRD")
-  Rake::Task["#{$root}/gen/proc_crd/pdf/MC100-64-CRD.pdf"].invoke
-  portfolio_start_msg("MC200-32-CRD")
-  Rake::Task["#{$root}/gen/proc_crd/pdf/MC200-32-CRD.pdf"].invoke
-  portfolio_start_msg("MC200-64-CRD")
-  Rake::Task["#{$root}/gen/proc_crd/pdf/MC200-64-CRD.pdf"].invoke
-  portfolio_start_msg("MC300-32-CRD")
-  Rake::Task["#{$root}/gen/proc_crd/pdf/MC300-32-CRD.pdf"].invoke
-  portfolio_start_msg("MC300-64-CRD")
-  Rake::Task["#{$root}/gen/proc_crd/pdf/MC300-64-CRD.pdf"].invoke
-  portfolio_start_msg("AC100-CRD")
-  Rake::Task["#{$root}/gen/proc_crd/pdf/AC100-CRD.pdf"].invoke
-  portfolio_start_msg("AC200-CRD")
-  Rake::Task["#{$root}/gen/proc_crd/pdf/AC200-CRD.pdf"].invoke
   portfolio_start_msg("RVI20ProfileRelease")
   Rake::Task["#{$root}/gen/profile/pdf/RVI20ProfileRelease.pdf"].invoke
   portfolio_start_msg("RVA20ProfileRelease")
@@ -620,27 +748,7 @@ def portfolio_start_msg(name)
   puts ""
 end
 
-# Shortcut targets for building CRDs, CTPs, and Profile Releases.
-task "MockCRD": "#{$root}/gen/proc_crd/pdf/MockProcessor-CRD.pdf"
-task "MockProcessorCRD": "#{$root}/gen/proc_crd/pdf/MockProcessor-CRD.pdf"
-task "MockCTP": "#{$root}/gen/proc_ctp/pdf/MockProcessor-CTP.pdf"
-task "MockProcessorCTP": "#{$root}/gen/proc_ctp/pdf/MockProcessor-CTP.pdf"
-task "MockCTP-HTML": "#{$root}/gen/proc_ctp/pdf/MockProcessor-CTP.html"
-task "MockProcessorCTP-HTML": "#{$root}/gen/proc_ctp/pdf/MockProcessor-CTP.html"
-task "RVI20-32-CTP": "#{$root}/gen/proc_ctp/pdf/RVI20-32-CTP.pdf"
-task "RVI20-64-CTP": "#{$root}/gen/proc_ctp/pdf/RVI20-64-CTP.pdf"
-task "MC100-32-CTP": "#{$root}/gen/proc_ctp/pdf/MC100-32-CTP.pdf"
-task "MC100-32-CTP-HTML": "#{$root}/gen/proc_ctp/pdf/MC100-32-CTP.html"
-task "RVI20-32-CRD": "#{$root}/gen/proc_crd/pdf/RVI20-32-CRD.pdf"
-task "RVI20-64-CRD": "#{$root}/gen/proc_crd/pdf/RVI20-64-CRD.pdf"
-task "MC100-32-CRD": "#{$root}/gen/proc_crd/pdf/MC100-32-CRD.pdf"
-task "MC100-64-CRD": "#{$root}/gen/proc_crd/pdf/MC100-64-CRD.pdf"
-task "MC200-32-CRD": "#{$root}/gen/proc_crd/pdf/MC200-32-CRD.pdf"
-task "MC200-64-CRD": "#{$root}/gen/proc_crd/pdf/MC200-64-CRD.pdf"
-task "MC300-32-CRD": "#{$root}/gen/proc_crd/pdf/MC300-32-CRD.pdf"
-task "MC300-64-CRD": "#{$root}/gen/proc_crd/pdf/MC300-64-CRD.pdf"
-task "AC100-CRD": "#{$root}/gen/proc_crd/pdf/AC100-CRD.pdf"
-task "AC200-CRD": "#{$root}/gen/proc_crd/pdf/AC200-CRD.pdf"
+# Shortcut targets for building Profile Releases.
 task "MockProfile": "#{$root}/gen/profile/pdf/MockProfileRelease.pdf"
 task "MockProfileRelease": "#{$root}/gen/profile/pdf/MockProfileRelease.pdf"
 task "RVI20": "#{$root}/gen/profile/pdf/RVI20ProfileRelease.pdf"

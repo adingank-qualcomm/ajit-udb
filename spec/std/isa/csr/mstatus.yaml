@@ -72,6 +72,26 @@ fields:
             name: Smdbltrp
     type: RW-H
     reset_value: UNDEFINED_LEGAL
+  MPELP:
+    location: 41
+    long_name: M-mode Previous Expected Landing Pad state
+    description: |
+      Holds the previous Expected Landing Pad (`ELP`) state when entering
+      M-mode from a trap, and is restored to `ELP` on `MRET`.
+
+      Defined by the Zicfilp extension.
+
+      Encoded as:
+
+      * 0 - `NO_LP_EXPECTED` - no landing pad instruction expected.
+      * 1 - `LP_EXPECTED` - a landing pad instruction is expected.
+    type: RW-H
+    reset_value: UNDEFINED_LEGAL
+    definedBy:
+      allOf:
+        - xlen: 64
+        - extension:
+            name: Zicfilp
   MPV:
     location: 39
     long_name: Machine Previous Virtualization mode
@@ -245,6 +265,24 @@ fields:
         return 2;
       }
 
+  SPELP:
+    location: 23
+    long_name: S-mode Previous Expected Landing Pad state
+    description: |
+      Holds the previous Expected Landing Pad (`ELP`) state when entering
+      (H)S-mode from a trap, and is restored to `ELP` on `SRET`.
+
+      Defined by the Zicfilp extension.
+
+      Encoded as:
+
+      * 0 - `NO_LP_EXPECTED` - no landing pad instruction expected.
+      * 1 - `LP_EXPECTED` - a landing pad instruction is expected.
+    type: RW-H
+    reset_value: UNDEFINED_LEGAL
+    definedBy:
+      extension:
+        name: Zicfilp
   TSR:
     location: 22
     long_name: Trap SRET
@@ -433,17 +471,6 @@ fields:
       } else {
         return csr_value.MPP;
       }
-    legal?(csr_value): |
-      if (csr_value.MPP == 2'b01 && !implemented?(ExtensionName::S)) {
-        return false;
-      } else if (csr_value.MPP == 2'b00 && !implemented?(ExtensionName::U)) {
-        return false;
-      } else if (csr_value.MPP == 2'b10) {
-        # never a valid value
-        return false;
-      } else {
-        return true;
-      }
   VS:
     location: 10-9
     long_name: Vector context Status
@@ -524,8 +551,6 @@ fields:
       } else {
         return csr_value.SPP;
       }
-    legal?(csr_value): |
-      return csr_value.SPP != 2'b10;
   MPIE:
     location: 7
     long_name: M-mode Previous Interrupt Enable

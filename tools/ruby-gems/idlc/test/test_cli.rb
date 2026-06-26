@@ -5,6 +5,7 @@
 # frozen_string_literal: true
 
 require "open3"
+require "tty-progressbar"
 
 require "idlc/cli"
 require "minitest/autorun"
@@ -82,10 +83,12 @@ class TestCli < CliTest
       f.flush
 
       compiler = Idl::Compiler.new
+      compiler.pb = TTY::ProgressBar.new("compiling [:bar]")
       m = compiler.parser.parse(idl, root: :instruction_operation)
       refute_nil m
       ast = m.to_ast
       refute_nil ast
+      ast.set_input_file(__FILE__)
 
       run_cmd("idlc compile -f yaml -r instruction_operation #{f.path}")
       assert_equal 0, result.status

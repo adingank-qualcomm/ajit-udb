@@ -17,6 +17,7 @@
 #include "udb/soc_model.hpp"
 #include "udb/stop_reason.h"
 #include "udb/version.hpp"
+#include "udb/NotificationHandler.hpp"
 
 #if !defined(JSON_ASSERT)
 #define JSON_ASSERT(cond) udb_assert(cond, "JSON assert");
@@ -28,41 +29,38 @@
 #endif
 
 namespace udb {
-  // base class for tracers; defines the tracepoints
-  class AbstractTracer {
-   public:
-    AbstractTracer() = default;
-    virtual ~AbstractTracer() = default;
-
-    virtual void trace_exception() {}
-
-    virtual void trace_mem_read_phys(uint64_t paddr, unsigned len) {}
-    virtual void trace_mem_write_phys(uint64_t paddr, unsigned len,
-                                      uint64_t data) {}
-  };
 
   class InstBase;
 
+  struct TranslateResult
+  {
+    uint64_t pAddr;
+  };
+
+  enum HART_NOTIFICATION_EVENT
+  {
+    PREFETCH_EVENT = 0,
+    FETCH_EVENT,
+    DECODE_EVENT,
+    PREEXECUTE_EVENT,
+    EXECUTE_EVENT,
+    EBREAK_EVENT,
+    EXCEPTION_EVENT
+  };
+
   template <SocModel SocType>
-  class HartBase {
+  class HartBase : public NotificationSource {
    public:
     HartBase(unsigned hart_id, SocType& soc, const Config& cfg)
         : m_hart_id(hart_id),
           m_soc(soc),
           m_cfg(cfg),
-          m_tracer(nullptr),
-          m_current_priv_mode(PrivilegeMode::M),
           m_exit_requested(false),
           m_num_inst_exec(0) {}
 
     virtual void reset(uint64_t reset_pc) {
       m_exit_requested = 0;
       m_num_inst_exec = 0;
-    }
-
-    void attach_tracer(AbstractTracer* t) {
-      udb_assert(m_tracer == nullptr, "m_tracer NULL ptr");
-      m_tracer = t;
     }
 
     virtual void set_pc(uint64_t new_pc) = 0;
@@ -73,10 +71,8 @@ namespace udb {
     // get the next instruction encoding
     virtual uint64_t fetch() = 0;
 
-    PrivilegeMode mode() const { return m_current_priv_mode; }
-    void set_mode(const PrivilegeMode& next_mode) {
-      m_current_priv_mode = next_mode;
-    }
+    virtual PrivilegeMode _get_mode() = 0;
+    virtual void _set_mode(const PrivilegeMode& next_mode) = 0;
 
     // access a physical address. All translations and physical checks
     // should have already occurred
@@ -123,15 +119,13 @@ namespace udb {
     // }
 
     [[noreturn]] void abort_current_instruction() {
-      if (m_tracer != nullptr) {
-        m_tracer->trace_exception();
-      }
+      //Notify Exception
+      Notify(EXCEPTION_EVENT, nullptr);
       throw AbortInstruction();
     }
 
     void wfi() {
-      //Do nothing for now
-      //throw WfiException();
+      throw WfiException();
     }
 
     void wrs_nto() {
@@ -143,9 +137,10 @@ namespace udb {
     }
 
     void pause() {
-      //Do nothing for now
-      //throw PauseException();
+      throw PauseException();
     }
+
+
 
     // SoC functions
     PossiblyUnknownBits<64> read_hpm_counter(const PossiblyUnknownBits<64>& counternum) {
@@ -161,14 +156,20 @@ namespace udb {
     void eei_ecall_from_s() { m_soc.eei_ecall_from_s(); }
     void eei_ecall_from_u() { m_soc.eei_ecall_from_u(); }
     void eei_ecall_from_vs() { m_soc.eei_ecall_from_vs(); }
-    void eei_ebreak() { m_soc.eei_ebreak(); }
+    void eei_ebreak() {
+      Notify(udb::HART_NOTIFICATION_EVENT::EBREAK_EVENT, nullptr);
+      m_soc.eei_ebreak();
+    }
     void memory_model_acquire() { m_soc.memory_model_acquire(); }
     void memory_model_release() { m_soc.memory_model_release(); }
     void notify_mode_change(const PrivilegeMode& from,
                             const PrivilegeMode& to) {
       m_soc.notify_mode_change(from, to);
     }
-    void ebreak() { m_soc.ebreak(); }
+    void ebreak() {
+      Notify(udb::HART_NOTIFICATION_EVENT::EBREAK_EVENT, nullptr);
+      m_soc.ebreak();
+    }
     void prefetch_instruction(const PossiblyUnknownBits<64>& paddr) {
       m_soc.prefetch_instruction(paddr.get());
     }
@@ -328,6 +329,19 @@ namespace udb {
     virtual uint64_t xreg(unsigned num) const = 0;
     virtual void set_xreg(unsigned num, uint64_t value) = 0;
 
+    virtual uint64_t freg(unsigned num) const {
+      throw std::runtime_error("No F register file in this configuration");
+    }
+    virtual void set_freg(unsigned num, uint64_t value) {
+      throw std::runtime_error("No F register file in this configuration");
+    }
+    virtual uint64_t vreg(unsigned num) const {
+      throw std::runtime_error("No V register file in this configuration");
+    }
+    virtual void set_vreg(unsigned num, uint64_t value) {
+      throw std::runtime_error("No V register file in this configuration");
+    }
+
     virtual CsrBase* csr(unsigned address) = 0;
     virtual const CsrBase* csr(unsigned address) const = 0;
 
@@ -375,12 +389,12 @@ namespace udb {
 
     uint64_t num_insts_exec() const { return m_num_inst_exec; }
 
+    virtual TranslateResult translate_native(uint64_t vaddr, MemoryOperation op, PrivilegeMode mode, uint64_t encoding) = 0;
+
    protected:
     const unsigned m_hart_id;
     SocType& m_soc;
     const Config m_cfg;
-    AbstractTracer* m_tracer;
-    PrivilegeMode m_current_priv_mode;
 
     int m_exit_code;
     std::string m_exit_reason;

@@ -157,7 +157,7 @@ end
 rule %r{#{CPP_HART_GEN_DST}/.*\.[ch](xx)?$} => proc { |tname|
   ["#{tname}.unformatted"]
 } do |t|
-  sh "clang-format #{t.name}.unformatted > #{t.name}"
+  sh "#{$root}/bin/clang-format #{t.name}.unformatted > #{t.name}"
 end
 
 rule %r{#{CPP_HART_GEN_DST}/.*/src/cfgs/[^/]+/[^/]+\.cxx\.unformatted$} => proc { |tname|
@@ -203,9 +203,12 @@ rule %r{#{CPP_HART_GEN_DST}/[^/]+/build/Makefile} => [
     "cmake",
     "-S#{CPP_HART_GEN_DST}/#{build_name}",
     "-B#{CPP_HART_GEN_DST}/#{build_name}/build",
+    "-DCMAKE_CXX_COMPILER=#{$root}/bin/g++",
+    "-DCOVERAGE_COMMAND=#{$root}/bin/gcov",
     "-DCONFIG_LIST=\"#{ENV['CONFIG'].gsub(',', ';')}\"",
     "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-    "-DCMAKE_BUILD_TYPE=#{cmake_build_type}"
+    "-DCMAKE_BUILD_TYPE=#{cmake_build_type}",
+    "-DUDB_ROOT=#{$root}"
   ]
   if ENV["IGNOREUNDEFINED"].nil?
     cmd.push("-DIGNOREUNDEFINED=NO")
@@ -393,13 +396,11 @@ task checkout_riscv_tests: "#{$root}/ext/riscv-tests/env/LICENSE"
 
 task build_riscv_tests: "checkout_riscv_tests" do
   configs_name, build_name = configs_build_name
+  xlen = configs_name[0] == "rv32" ? "32" : "64"
+  riscv_prefix = "#{$root}/bin/riscv#{xlen}-unknown-elf-"
 
   Dir.chdir "#{$root}/tests/isa" do
-    if configs_name[0] == "rv32"
-      sh "make XLEN=32"
-    else
-      sh "make"
-    end
+    sh "make XLEN=#{xlen} BUILD_TYPE=#{cmake_build_type} RISCV_PREFIX=#{riscv_prefix}"
   end
 end
 
@@ -420,6 +421,7 @@ namespace :test do
     Dir.chdir "#{CPP_HART_GEN_DST}/#{build_name}/build" do
       sh "make -j #{$jobs} test_bits_directed"
       sh "make -j #{$jobs} test_bits_random"
+      sh "make -j #{$jobs} test_regfile"
       sh "ctest -T coverage -T test"
     end
   end
@@ -465,6 +467,11 @@ namespace :test do
       "mul", "mulh", "mulhsu", "mulhu", "mulw",
       "rem", "remu", "remuw", "remw"]
 
+    rv32ufTests = [
+      "fadd", "fclass", "fcmp", "fcvt", "fcvt_w", "fdiv", "fmadd", "fmin", "ldst", "move", "recoding"
+    ]
+    rv64ufTests = rv32ufTests
+
     # compressed tests same for rv32 as rv64
     ucTests = ["rvc"]
 
@@ -475,10 +482,12 @@ namespace :test do
       uiTests = rv64uiTests
       umTests = rv64umTests
       siTests = rv64siTests
+      ufTests = rv64ufTests
     else
       uiTests = rv32uiTests
       umTests = rv32umTests
       siTests = rv32siTests
+      ufTests = rv32ufTests
     end
 
     uiTests.each do |t|
@@ -508,6 +517,13 @@ namespace :test do
         "#{configs_name[0]}si-p-#{t}"
       )
     end
+
+    ufTests.each do |t|
+      run_test(
+        "#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{configs_name[0]} -c #{$root}/cfgs/#{configs_name[0]}-riscv-tests.yaml ext/riscv-tests/isa/#{configs_name[0]}uf-p-#{t}",
+        "#{configs_name[0]}uf-p-#{t}"
+      )
+    end
   end
 
   task riscv_vector_tests: ["build_riscv_tests", "build:iss"] do
@@ -517,8 +533,9 @@ namespace :test do
     # uvTests are common for rv32/64
     uvTests = ["vsetivli", "vsetvl", "vsetvli_rs1_eq_zero", "vsetvli_vl_lt_vlmax",
                 "vle8", "vmv_v_i", "vadd.vv"]
+    base = YAML.load_file("#{$root}/cfgs/#{configs_name[0]}.yaml")["params"]["MXLEN"]
     uvTests.each do |t|
-      sh "#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{configs_name[0]} -c #{$root}/cfgs/#{configs_name[0]}-vector.yaml tests/isa/#{configs_name[0]}uv-p-#{t}"
+      sh "#{CPP_HART_GEN_DST}/#{build_name}/build/iss -m #{configs_name[0]} -c #{$root}/cfgs/#{configs_name[0]}.yaml tests/isa/rv#{base}uv-p-#{t}"
     end
   end
 end

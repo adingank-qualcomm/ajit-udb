@@ -133,7 +133,7 @@ operation(): |
     CSR[mstatus].SPIE = 1;
     CSR[mstatus].SPP = 2'b00;
     $pc = $bits(CSR[sepc]);
-  } else {
+  } else if (implemented?(ExtensionName::H)) {
     if (CSR[mstatus].TSR == 1'b1) {
       raise (ExceptionCode::IllegalInstruction, mode(), $encoding);
     }
@@ -141,26 +141,6 @@ operation(): |
     CSR[vsstatus].SIE = CSR[vsstatus].SPIE;
     CSR[vsstatus].SPIE = 1;
     $pc = $bits(CSR[vsepc]);
+  } else {
+    unreachable();
   }
-
-# SPDX-SnippetBegin
-# SPDX-FileCopyrightText: 2017-2025 Contributors to the RISCV Sail Model <https://github.com/riscv/sail-riscv/blob/master/LICENCE>
-# SPDX-License-Identifier: BSD-2-Clause
-sail(): |
-  {
-    let sret_illegal : bool = match cur_privilege {
-      User       => true,
-      Supervisor => not(haveSupMode ()) | mstatus.TSR() == 0b1,
-      Machine    => not(haveSupMode ())
-    };
-    if   sret_illegal
-    then { handle_illegal(); RETIRE_FAIL }
-    else if not(ext_check_xret_priv (Supervisor))
-    then { ext_fail_xret_priv(); RETIRE_FAIL }
-    else {
-      set_next_pc(exception_handler(cur_privilege, CTL_SRET(), PC));
-      RETIRE_SUCCESS
-    }
-  }
-
-# SPDX-SnippetEnd

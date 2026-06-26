@@ -9,60 +9,15 @@ require "concurrent/hash"
 require "sorbet-runtime"
 
 require_relative "cfg_arch"
+require_relative "paths"
+require_relative "yaml/yaml_resolver"
 
 module Udb
-  extend T::Sig
-
-  sig { returns(Pathname) }
-  def self.gem_path
-    @gem_path ||= Pathname.new(Gem::Specification.find_by_name("udb").full_gem_path)
-  end
-
-  sig { params(from_dir: Pathname).returns(Pathname) }
-  def self.find_udb_root(from_dir)
-    if (from_dir / "do").executable?
-      from_dir
-    else
-      raise "Cannot find UDB repository root in directory hierarchy" if from_dir.dirname == from_dir
-
-      find_udb_root(from_dir.dirname)
-    end
-  end
-  private_class_method :find_udb_root
-
-  sig { returns(Pathname) }
-  def self.repo_root
-    @root ||=
-      if ENV.key?("UDB_ROOT")
-        Pathname.new(ENV["UDB_ROOT"])
-      else
-        # try to find the root in the directory hierarchy by looking for the do script
-        find_udb_root(Pathname.new(__dir__))
-      end
-  end
-
-  sig { returns(Pathname) }
-  def self.default_std_isa_path
-    repo_root / "spec" / "std" / "isa"
-  end
-
-  sig { returns(Pathname) }
-  def self.default_custom_isa_path
-    repo_root / "spec" / "custom" / "isa"
-  end
-
-  sig { returns(Pathname) }
-  def self.default_gen_path
-    repo_root / "gen"
-  end
-
-  sig { returns(Pathname) }
-  def self.default_cfgs_path
-    repo_root / "cfgs"
-  end
-
   # resolves the specification in the context of a config, and writes to a generation folder
   #
+  # Raised by Resolver#cfg_info when a config name or path cannot be found.
+  class ConfigNotFoundError < StandardError; end
+
   # The primary interface for users will be #cfg_arch_for
   class Resolver
     extend T::Sig
@@ -103,24 +58,20 @@ module Udb
     # path to merged spec (merged with custom overley, but prior to resolution)
     sig { params(cfg_path_or_name: T.any(String, Pathname)).returns(Pathname) }
     def merged_spec_path(cfg_path_or_name)
-      op = cfg_info(cfg_path_or_name).overlay_path
-      if op.nil?
+      if cfg_info(cfg_path_or_name).overlay_path.nil?
         @gen_path / "spec" / "_"
       else
-        @gen_path / "spec" / op.basename
+        @gen_path / "spec" / cfg_info(cfg_path_or_name).name
       end
-      # @gen_path / "spec" / cfg_info(cfg_path_or_name).name
     end
 
     # path to merged and resolved spec
     sig { params(cfg_path_or_name: T.any(String, Pathname)).returns(Pathname) }
     def resolved_spec_path(cfg_path_or_name)
-      # @gen_path / "resolved_spec" / cfg_info(cfg_path_or_name).name
-      op = cfg_info(cfg_path_or_name).overlay_path
-      if op.nil?
+      if cfg_info(cfg_path_or_name).overlay_path.nil?
         @gen_path / "resolved_spec" / "_"
       else
-        @gen_path / "resolved_spec" / op.basename
+        @gen_path / "resolved_spec" / cfg_info(cfg_path_or_name).name
       end
     end
 
@@ -134,7 +85,7 @@ module Udb
     # Any specific path can be overridden. If all paths are overridden, it doesn't matter what repo_root is.
     sig {
       params(
-        repo_root: Pathname,
+        repo_root: T.nilable(Pathname),
         schemas_path_override: T.nilable(Pathname),
         cfgs_path_override: T.nilable(Pathname),
         gen_path_override: T.nilable(Pathname),
@@ -155,11 +106,11 @@ module Udb
       compile_idl: false
     )
       @repo_root = repo_root
-      @schemas_path = schemas_path_override || (@repo_root / "spec" / "schemas")
-      @cfgs_path = cfgs_path_override || (@repo_root / "cfgs")
-      @gen_path = gen_path_override || (@repo_root / "gen")
-      @std_path = std_path_override || (@repo_root / "spec" / "std" / "isa")
-      @custom_path = custom_path_override || (@repo_root / "spec" / "custom" / "isa")
+      @schemas_path = schemas_path_override || Udb.default_schemas_path
+      @cfgs_path = cfgs_path_override || Udb.default_cfgs_path
+      @gen_path = gen_path_override || Udb.default_gen_path
+      @std_path = std_path_override || Udb.default_std_isa_path
+      @custom_path = custom_path_override || Udb.default_custom_isa_path
       @quiet = quiet
       @compile_idl = compile_idl
       @mutex = Thread::Mutex.new
@@ -238,16 +189,20 @@ module Udb
           end
         raise "custom directory '#{overlay_path}' does not exist" if !overlay_path.nil? && !overlay_path.directory?
 
-        if any_newer?(merged_spec_path(config_name) / ".stamp", deps)
-          run [
-            "uv", "run",
-            "#{Udb.gem_path}/python/yaml_resolver.py",
-            "merge",
-            std_path.to_s,
-            overlay_path.nil? ? "/does/not/exist" : overlay_path.to_s,
-            merged_spec_path(config_name).to_s
-          ]
-          FileUtils.touch(merged_spec_path(config_name) / ".stamp")
+        FileUtils.mkdir_p(@gen_path / "spec")
+        merge_lock_name = merged_spec_path(config_name).basename
+        File.open(@gen_path / "spec" / ".#{merge_lock_name}.lock", File::CREAT | File::RDWR) do |f|
+          f.flock(File::LOCK_EX)
+          if any_newer?(merged_spec_path(config_name) / ".stamp", deps)
+            # Use Ruby YAML resolver instead of Python
+            yaml_resolver = Udb::Yaml::Resolver.new(quiet: @quiet, compile_idl: @compile_idl)
+            yaml_resolver.merge_files(
+              std_path.to_s,
+              overlay_path&.to_s,
+              merged_spec_path(config_name).to_s
+            )
+            FileUtils.touch(merged_spec_path(config_name) / ".stamp")
+          end
         end
       end
     end
@@ -258,30 +213,24 @@ module Udb
       @mutex.synchronize do
         config_name = config_yaml["name"]
 
-        deps = Dir[merged_spec_path(config_name) / "**" / "*.yaml"].map { |p| Pathname.new(p) }
-        if any_newer?(resolved_spec_path(config_name) / ".stamp", deps)
-          if @compile_idl
-            run [
-              "uv", "run",
-              "#{Udb.gem_path}/python/yaml_resolver.py",
-              "resolve",
-              "--compile_idl",
+        FileUtils.mkdir_p(@gen_path / "resolved_spec")
+        resolve_lock_name = resolved_spec_path(config_name).basename
+        File.open(@gen_path / "resolved_spec" / ".#{resolve_lock_name}.lock", File::CREAT | File::RDWR) do |f|
+          f.flock(File::LOCK_EX)
+          deps = Dir[merged_spec_path(config_name) / "**" / "*.yaml"].map { |p| Pathname.new(p) }
+          if any_newer?(resolved_spec_path(config_name) / ".stamp", deps)
+            # Use Ruby YAML resolver instead of Python
+            yaml_resolver = Udb::Yaml::Resolver.new(quiet: @quiet, compile_idl: @compile_idl)
+            yaml_resolver.resolve_files(
               merged_spec_path(config_name).to_s,
-              resolved_spec_path(config_name).to_s
-            ]
-          else
-            run [
-              "uv", "run",
-              "#{Udb.gem_path}/python/yaml_resolver.py",
-              "resolve",
-              merged_spec_path(config_name).to_s,
-              resolved_spec_path(config_name).to_s
-            ]
+              resolved_spec_path(config_name).to_s,
+              no_checks: false
+            )
+            FileUtils.touch(resolved_spec_path(config_name) / ".stamp")
           end
-          FileUtils.touch(resolved_spec_path(config_name) / ".stamp")
-        end
 
-        FileUtils.cp_r(std_path / "isa", resolved_spec_path(config_name))
+          FileUtils.cp_r(std_path / "isa", resolved_spec_path(config_name))
+        end
       end
     end
 
@@ -301,7 +250,11 @@ module Udb
 
             config_path_or_name.realpath
           when String
-            (@cfgs_path / "#{config_path_or_name}.yaml").realpath
+            if (@cfgs_path / "#{config_path_or_name}.yaml").file?
+              (@cfgs_path / "#{config_path_or_name}.yaml").realpath
+            else
+              raise ConfigNotFoundError, "Could not find config: #{config_path_or_name}"
+            end
           else
             T.absurd(config_path_or_name)
           end
@@ -323,18 +276,57 @@ module Udb
             raise "Cannot resolve path to overlay (#{config_yaml["arch_overlay"]})"
           end
 
+        merged_spec_path =
+          if overlay_path.nil?
+            @gen_path / "spec" / "_"
+          else
+            @gen_path / "spec" / config_yaml["name"]
+          end
+        resolved_spec_path =
+          if overlay_path.nil?
+            @gen_path / "resolved_spec" / "_"
+          else
+            @gen_path / "resolved_spec" / config_yaml["name"]
+          end
         info = ConfigInfo.new(
           name: config_yaml["name"],
           path: config_path,
           overlay_path:,
           unresolved_yaml: config_yaml,
           spec_path: std_path,
-          merged_spec_path: @gen_path / "spec" / (overlay_path.nil? ? "_" : File.basename(overlay_path)),
-          resolved_spec_path: @gen_path / "resolved_spec" / (overlay_path.nil? ? "_" : File.basename(overlay_path)),
+          merged_spec_path: @gen_path / "spec" / (overlay_path.nil? ? "_" : config_yaml["name"]),
+          resolved_spec_path: @gen_path / "resolved_spec" / (overlay_path.nil? ? "_" : config_yaml["name"]),
           resolver: self
         )
         @cfg_info[config_path] = info
         @cfg_info[info.name] = info
+      end
+    end
+
+    # Resolve a config pointer (name or file path) to a ConfiguredArchitecture.
+    # Resolution order:
+    #   1. If <cfgs_path>/<pointer>.yaml exists on disk, treat as a repo config name
+    #      (handles names that contain '/', e.g. "profile/RVA23U64").
+    #   2. If the pointer ends in .yaml/.yml, is absolute, or starts with ./ or ../,
+    #      treat as a file path resolved relative to +relative_dir+.
+    #   3. Otherwise raise ArgumentError — the pointer is neither a known config name
+    #      nor a recognisable file path.
+    sig { params(pointer: String, relative_dir: Pathname).returns(Udb::ConfiguredArchitecture) }
+    def cfg_arch_for_pointer(pointer, relative_dir:)
+      if (@cfgs_path / "#{pointer}.yaml").file?
+        # Repo config name — may contain '/' for nested configs (e.g. "profile/RVA23U64").
+        cfg_arch_for(pointer)
+      elsif pointer.end_with?(".yaml", ".yml") ||
+            Pathname.new(pointer).absolute? ||
+            pointer.start_with?("./", "../")
+        # Explicit file path — resolve relative to the caller's directory.
+        path = Pathname.new(pointer)
+        cfg_arch_for(path.absolute? ? path : (relative_dir / path).cleanpath)
+      else
+        raise ArgumentError,
+          "Cannot resolve config pointer '#{pointer}': not a known config name " \
+          "under '#{@cfgs_path}' and not a recognisable file path " \
+          "(.yaml/.yml extension, absolute, or starting with ./ or ../)"
       end
     end
 
@@ -356,6 +348,60 @@ module Udb
           config_info.name,
           Udb::AbstractConfig.create(gen_path / "cfgs" / "#{config_info.name}.yaml", config_info)
         )
+      end
+    end
+
+    # Create a ConfiguredArchitecture directly from an in-memory config data hash,
+    # bypassing resolve_config and resolve_arch entirely. Only valid when the config
+    # has no arch_overlay (i.e., it uses the standard spec at gen/resolved_spec/_).
+    # Callers must ensure this precondition holds before calling this method.
+    sig { params(config_data: T::Hash[String, T.untyped]).returns(Udb::ConfiguredArchitecture) }
+    def cfg_arch_for_data(config_data)
+      info = ConfigInfo.new(
+        name: config_data["name"],
+        path: Pathname.new("portfolio/#{config_data["name"]}"),
+        overlay_path: nil,
+        unresolved_yaml: config_data,
+        spec_path: std_path,
+        merged_spec_path: @gen_path / "spec" / "_",
+        resolved_spec_path: @gen_path / "resolved_spec" / "_",
+        resolver: self
+      )
+      Udb::ConfiguredArchitecture.new(
+        config_data["name"],
+        Udb::AbstractConfig.create_from_data(config_data, info)
+      )
+    end
+
+    SCHEMAS_BASE_URL = "https://riscv.github.io/riscv-unified-db/schemas"
+
+    # Resolve schema files by rewriting their $id to the full published URL and
+    # writing the result to gen/schemas/SCHEMA_NAME/VERSION/SCHEMA_FILENAME.
+    #
+    # Each schema file has its own independent version (the $id field, e.g. "v0.1").
+    # The resolved file is written to gen/schemas/<schema_name>/<version>/<schema_name>
+    # with $id set to
+    # https://riscv.github.io/riscv-unified-db/schemas/<schema_name>/<version>/<schema_name>.
+    sig { void }
+    def resolve_schemas
+      require "json"
+
+      schemas_path.glob("*.json").each do |schema_file|
+        next if schema_file.basename.to_s == "json-schema-draft-07.json"
+
+        schema_data = JSON.parse(schema_file.read)
+        version = schema_data["$id"]
+        next if version.nil?
+
+        schema_name = schema_file.basename.to_s
+        resolved_id = "#{SCHEMAS_BASE_URL}/#{schema_name}/#{version}/#{schema_name}"
+
+        resolved_schema = schema_data.merge("$id" => resolved_id)
+
+        out_dir = gen_path / "schemas" / schema_name / version
+        out_dir.mkpath
+        out_path = out_dir / schema_name
+        out_path.write(JSON.pretty_generate(resolved_schema) + "\n")
       end
     end
   end

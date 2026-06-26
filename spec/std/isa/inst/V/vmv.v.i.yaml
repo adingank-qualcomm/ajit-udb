@@ -54,52 +54,8 @@ operation(): |
     U32 start_bit_pos = i * state.sew;
     U32 end_bit_pos = start_bit_pos + state.sew - 1;
 
-    # Write the sign-extended immediate (truncated to SEW bits) to the element,
-    # guarding against invalid bit-slice ranges at vector register boundaries
-    if (start_bit_pos == 0) {
-      if (end_bit_pos == VLEN - 1) {
-        v[vd] = sext_imm[state.sew-1:0];
-      } else {
-        v[vd] = {v[vd][VLEN-1:end_bit_pos + 1], sext_imm[state.sew-1:0]};
-      }
-    } else if (end_bit_pos == VLEN - 1) {
-      v[vd] = {sext_imm[state.sew-1:0], v[vd][start_bit_pos-1:0]};
-    } else {
-      v[vd] = {v[vd][VLEN-1:end_bit_pos + 1], sext_imm[state.sew-1:0], v[vd][start_bit_pos-1:0]};
-    }
+    # Write the sign-extended immediate (truncated to SEW bits) to the element
+    V[vd][end_bit_pos:start_bit_pos] = sext_imm[state.sew-1:0];
   }
 
   CSR[vstart].VALUE = 0;
-
-# SPDX-SnippetBegin
-# SPDX-FileCopyrightText: 2017-2025 Contributors to the RISCV Sail Model <https://github.com/riscv/sail-riscv/blob/master/LICENCE>
-# SPDX-License-Identifier: BSD-2-Clause
-sail(): |
-  {
-    let SEW      = get_sew();
-    let LMUL_pow = get_lmul_pow();
-    let num_elem = get_num_elem(LMUL_pow, SEW);
-
-    if illegal_vd_unmasked() then { handle_illegal(); return RETIRE_FAIL };
-
-    let 'n = num_elem;
-    let 'm = SEW;
-
-    let vm_val  : vector('n, dec, bool)     = read_vmask(num_elem, 0b1, 0b00000);
-    let imm_val : bits('m)                  = sign_extend(simm);
-    let vd_val  : vector('n, dec, bits('m)) = read_vreg(num_elem, SEW, LMUL_pow, vd);
-    result      : vector('n, dec, bits('m)) = undefined;
-    mask        : vector('n, dec, bool)     = undefined;
-
-    (result, mask) = init_masked_result(num_elem, SEW, LMUL_pow, vd_val, vm_val);
-
-    foreach (i from 0 to (num_elem - 1)) {
-      if mask[i] then result[i] = imm_val
-    };
-
-    write_vreg(num_elem, SEW, LMUL_pow, vd, result);
-    vstart = zeros();
-    RETIRE_SUCCESS
-  }
-
-# SPDX-SnippetEnd

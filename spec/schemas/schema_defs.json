@@ -1,8 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-
+  "$id": "v0.1",
   "title": "Common patterns used by all schemas",
-
   "$defs": {
     "$source": {
       "type": "string",
@@ -34,7 +33,10 @@
     },
     "field_location": {
       "oneOf": [
-        { "type": "integer", "description": "Location of a single bit" },
+        {
+          "type": "integer",
+          "description": "Location of a single bit"
+        },
         {
           "type": "string",
           "pattern": "^[0-9]+-[0-9]+$",
@@ -113,6 +115,7 @@
     },
     "spec_state": {
       "type": "string",
+      "description": "Ratification state of a specification or extension version: `development` (actively being worked on), `frozen` (feature-complete, under review), `public-review` (open for public comment), `ratification-ready` (approved by the task group, awaiting board vote), `ratified` (officially approved by RISC-V International), or `nonstandard-released` (released but not part of the RISC-V standard).",
       "enum": [
         "development",
         "frozen",
@@ -148,7 +151,9 @@
           "type": "string",
           "description": "IDL boolean expression. When true, the text applies"
         },
-        "when_ast": { "type": "object" }
+        "when_ast": {
+          "type": "object"
+        }
       },
       "additionalProperties": false
     },
@@ -219,17 +224,20 @@
     },
     "extension_name": {
       "type": "string",
+      "description": "Extension name (e.g., `I`, `M`, `Zicsr`, `Smstateen`)",
       "pattern": "^(([A-WY])|([SXZ][a-z0-9]+))$"
     },
     "extension_version": {
-      "$ref": "#/$defs/rvi_version"
+      "$ref": "#/$defs/rvi_version",
+      "description": "Exact version in `MAJOR[.MINOR[.PATCH]]` format (e.g., `2.1.0`, `2.1`, `2`)"
     },
     "requirement_string": {
       "type": "string",
+      "description": "Version requirement string (e.g., `>= 2.0`, `~> 1.5`, `= 2.1`). The `~>` operator is a pessimistic version constraint: `~> X.Y` means `>= X.Y` and `< (X+1).0`; `~> X.Y.Z` means `>= X.Y.Z` and `< X.(Y+1).0`.",
       "pattern": "^((>=)|(>)|(~>)|(<)|(<=)|(=))?\\s*[0-9]+(\\.[0-9]+(\\.[0-9]+(-[a-fA-F0-9]+)?)?)?$"
     },
     "version_requirements": {
-      "description": "A (set of) version requirements",
+      "description": "Version requirement or list of requirements (e.g., `>= 2.0` or `['>= 2.0', '< 3.0']`)",
       "oneOf": [
         {
           "$ref": "#/$defs/requirement_string"
@@ -275,7 +283,9 @@
     },
     "requires_entry": {
       "oneOf": [
-        { "$ref": "#/$defs/extension_requirement" },
+        {
+          "$ref": "#/$defs/extension_requirement"
+        },
         {
           "type": "object",
           "properties": {
@@ -374,30 +384,6 @@
         }
       }
     },
-    "cert_normative_rules": {
-      "description": "Architecturally visible behaviors requiring validation by certification tests",
-      "type": "array",
-      "required": ["id", "name", "doc_links", "description"],
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "doc_links": {
-          "description": "Link to UDB documentation, ISA manual, Sail code, or IDL code",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "description": {
-          "type": "string"
-        }
-      },
-      "additionalProperties": false
-    },
     "encoding_match": {
       "oneOf": [
         {
@@ -428,7 +414,7 @@
     "reference": {
       "type": "string",
       "pattern": "^.+\\.yaml#(/.*)?$",
-      "description": "refrence to another database object, as a JSON Reference"
+      "description": "reference to another database object, as a JSON Reference"
     },
     "integer": {
       "description": "An integer, either native to JSON or a number-like string",
@@ -560,6 +546,24 @@
                     },
                     {
                       "type": "boolean"
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "boolean"
+                      }
                     }
                   ]
                 },
@@ -685,12 +689,10 @@
       },
       "additionalProperties": false
     },
-
     "idl": {
       "description": "IDL code",
       "type": "string"
     },
-
     "idl_condition": {
       "description": "A condition expressed with IDL",
       "type": "object",
@@ -710,7 +712,6 @@
       },
       "additionalProperties": false
     },
-
     "yaml_condition": {
       "oneOf": [
         {
@@ -753,6 +754,19 @@
           "additionalProperties": false
         },
         {
+          "type": "object",
+          "required": ["if", "then"],
+          "properties": {
+            "if": {
+              "$ref": "#/$defs/yaml_condition"
+            },
+            "then": {
+              "$ref": "#/$defs/yaml_condition"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
           "$ref": "#/$defs/extension_condition"
         },
         {
@@ -763,7 +777,6 @@
         }
       ]
     },
-
     "xlen_condition": {
       "type": "object",
       "required": ["xlen"],
@@ -774,8 +787,8 @@
       },
       "additionalProperties": false
     },
-
     "condition": {
+      "description": "A condition (YAML structure or IDL function). See the conditions reference for details.",
       "oneOf": [
         {
           "$ref": "#/$defs/yaml_condition"
@@ -785,7 +798,6 @@
         }
       ]
     },
-
     "extension_requirement_list_item": {
       "description": "A list of extension requirements, possibly with a condition",
       "oneOf": [
@@ -832,7 +844,6 @@
         }
       ]
     },
-
     "uint32": {
       "type": "integer",
       "minimum": 0,

@@ -12,6 +12,15 @@ require "optparse"
 require "yaml"
 
 module Idl
+  # Minimal register-file descriptor used by the CLI when no architecture is configured.
+  # Provides the interface that SymbolTable.new(register_files:) expects.
+  DefaultXRegisterFile = Struct.new(:name, :register_length, :registers) do
+    def self.build(xlen = 64)
+      registers = Array.new(32) { |i| Struct.new(:name).new("x#{i}") }
+      new("X", "return #{xlen};", registers)
+    end
+  end
+
   class Cli
     extend Forwardable
     def_delegators :@runner,
@@ -48,7 +57,7 @@ module Idl
       end
 
       compiler = Compiler.new
-      symtab = SymbolTable.new
+      symtab = SymbolTable.new(register_files: [DefaultXRegisterFile.build])
 
       add_defines(compiler, symtab)
       expr_ast = compiler.compile_expression(args[0], symtab)
@@ -104,7 +113,7 @@ module Idl
 
     def do_tc_inst(args, options, vars)
       compiler = Compiler.new
-      symtab = SymbolTable.new
+      symtab = SymbolTable.new(register_files: [DefaultXRegisterFile.build])
 
       add_defines(compiler, symtab)
       symtab.push(nil)
@@ -131,7 +140,7 @@ module Idl
         end
 
       ast = compiler.compile_inst_scope(idl, symtab:, input_file: args[0])
-      ast.type_check(symtab)
+      ast.type_check(symtab, strict: options.strict)
     end
 
     def run
@@ -196,6 +205,7 @@ module Idl
 
         add_define_option.call(c)
         c.option "-k", "--key KEY", String, "When FILE is a YAML file, type check just the contents of KEY"
+        c.option "-s", "--strict", "Run strict type checking (only consider reachable code, and fail if using a variable/field is not known to be defined)"
         c.option "-d", "--var NAME=WIDTH", (<<~DESC
           Define decode variable, e.g., xs2=5
           NAME is the name of the variable, and must be a valid IDL identifier

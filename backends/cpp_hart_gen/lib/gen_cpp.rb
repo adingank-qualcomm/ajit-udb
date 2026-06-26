@@ -111,9 +111,9 @@ module Idl
     def to_cxx
       (if (@qualifiers.nil? || @qualifiers.empty?)
          ""
-else
-  "#{@qualifiers.include?(:const) ? 'const' : ''} "
-end) + \
+      else
+        "#{@qualifiers.include?(:const) ? 'const' : ''} "
+      end) + \
       to_cxx_no_qualifiers
     end
   end
@@ -177,6 +177,26 @@ module Idl
   class AryRangeAssignmentAst < AstNode
     sig { override.params(symtab: SymbolTable, indent: Integer, indent_spaces: Integer).returns(String) }
     def gen_cpp(symtab, indent = 0, indent_spaces: 2)
+      # For register file range assignments (RF[idx][msb:lsb] = val), the getter
+      # returns by value, so we must read into a temporary, modify, then write back.
+      if variable.is_a?(Idl::AryElementAccessAst)
+        var_type = variable.var.type(symtab) rescue nil
+        if var_type&.kind == :array &&
+           var_type.sub_type.is_a?(Idl::RegFileElementType) &&
+           var_type.qualifiers.include?(:global)
+          rf_name = var_type.sub_type.name.downcase
+          value_result = value_try do
+            msb_val = msb.value(symtab)
+            lsb_val = lsb.value(symtab)
+            return "#{' ' * indent}__UDB_HART->_set_#{rf_name}reg( #{variable.index.gen_cpp(symtab, 0, indent_spaces:)}, ([&]() { auto __udb_reg_tmp = #{variable.gen_cpp(symtab)}; bit_insert<#{msb_val}, #{lsb_val}, #{variable.type(symtab).width}>(__udb_reg_tmp, #{write_value.gen_cpp(symtab)}); return __udb_reg_tmp; }()))"
+          end
+          value_else(value_result) do
+            return "#{' ' * indent}__UDB_HART->_set_#{rf_name}reg( #{variable.index.gen_cpp(symtab, 0, indent_spaces:)}, ([&]() { auto __udb_reg_tmp = #{variable.gen_cpp(symtab)}; bit_insert(__udb_reg_tmp, #{msb.gen_cpp(symtab)}, #{lsb.gen_cpp(symtab)}, #{write_value.gen_cpp(symtab)}); return __udb_reg_tmp; }()))"
+          end
+        end
+      end
+
+      # Standard range assignment (non-register-file)
       expression = nil
       value_result = value_try do
         # see if msb and lsb are compile-time-known
@@ -320,12 +340,6 @@ module Idl
   class FunctionDefAst < AstNode
     sig { params(symtab: SymbolTable).returns(String) }
     def gen_return_type(symtab)
-      if templated?
-        template_names.each_with_index do |tname, idx|
-          symtab.add!(tname, Var.new(tname, template_types(symtab)[idx]))
-        end
-      end
-
       cpp =
         if @return_type_nodes.empty?
           "void"
@@ -335,12 +349,6 @@ module Idl
           rts = @return_type_nodes.map { |rt| rt.gen_cpp(symtab, 0) }
           "std::tuple<#{rts.join(', ')}>"
         end
-
-      if templated?
-        template_names.each do |tname|
-          symtab.del(tname)
-        end
-      end
 
       cpp
     end
@@ -359,7 +367,7 @@ module Idl
     sig { params(symtab: SymbolTable).returns(String) }
     def gen_cpp_argument_list(symtab)
       symtab.push(self)
-      apply_template_and_arg_syms(symtab)
+      apply_arg_syms(symtab)
 
       list = []
       @argument_nodes.each_with_index do |arg, idx|
@@ -389,7 +397,7 @@ module Idl
     sig { params(symtab: SymbolTable).returns(String) }
     def gen_c_argument_list(symtab)
       symtab.push(self)
-      apply_template_and_arg_syms(symtab)
+      apply_arg_syms(symtab)
 
       list = @argument_nodes.map do |arg|
         arg.gen_c(symtab)
@@ -402,37 +410,17 @@ module Idl
 
     sig { params(symtab: SymbolTable).returns(String) }
     def gen_cpp_template(symtab)
-      if !templated?
-        list = []
-        @argument_nodes.each_with_index do |arg, idx|
-          if arg.type(symtab).kind == :bits
-            list << "template <unsigned, bool> class _Arg#{idx}BitsType"
-            list << "unsigned _Arg#{idx}BitsTypeN"
-            list << "bool _Arg#{idx}BitsTypeSigned"
-          end
+      list = []
+      @argument_nodes.each_with_index do |arg, idx|
+        if arg.type(symtab).kind == :bits
+          list << "template <unsigned, bool> class _Arg#{idx}BitsType"
+          list << "unsigned _Arg#{idx}BitsTypeN"
+          list << "bool _Arg#{idx}BitsTypeSigned"
         end
-        if list.empty?
-          ""
-        else
-          "template <#{list.join(', ')}>"
-        end
+      end
+      if list.empty?
+        ""
       else
-        list = []
-        ttypes = template_types(symtab)
-        ttypes.each_index { |i|
-          list << "#{ttypes[i].to_cxx_no_qualifiers} #{template_names[i]}"
-          symtab.add!(template_names[i], Var.new(template_names[i], ttypes[i], template_index: i, function_name: name))
-        }
-        @argument_nodes.each_with_index do |arg, idx|
-          if arg.type(symtab).kind == :bits
-            list << "template <unsigned, bool> class _Arg#{idx}BitsType"
-            list << "unsigned _Arg#{idx}BitsTypeN"
-            list << "bool _Arg#{idx}BitsTypeSigned"
-          end
-        end
-        ttypes.each_index { |i|
-          symtab.del(template_names[i])
-        }
         "template <#{list.join(', ')}>"
       end
     end
@@ -591,9 +579,9 @@ module Idl
 
       if w == :unknown
         if t.known?
-          "#{' ' * indent}_RuntimeBits<#{symtab.cfg_arch.possible_xlens.max}, #{t.signed?}>{#{v}_b, __UDB_XLEN}"
+          "#{' ' * indent}_RuntimeBits<#{symtab.possible_xlens.max}, #{t.signed?}>{#{v}_b, __UDB_XLEN}"
         else
-          "#{' ' * indent}_PossiblyUnknownRuntimeBits<#{symtab.cfg_arch.possible_xlens.max}, #{t.signed?}>{\"#{v}\"_xb, __UDB_XLEN}"
+          "#{' ' * indent}_PossiblyUnknownRuntimeBits<#{symtab.possible_xlens.max}, #{t.signed?}>{\"#{v}\"_xb, __UDB_XLEN}"
         end
       else
         if t.known?
@@ -786,6 +774,7 @@ module Idl
           else
             max = bits_expression.max_value(symtab)
             max = "BitsInfinitePrecision" if max == :unknown
+            raise "Not runtime? (#{text_value})" unless type(symtab).runtime?
             result = "#{' ' * indent}_PossiblyUnknownRuntimeBits<#{max}, false>"
           end
         end
@@ -842,6 +831,12 @@ module Idl
     end
   end
 
+  def self.maybe_array_cast(lt, rt, rhs_cpp)
+    return rhs_cpp unless lt.kind == :array && rt.kind == :array
+    lt_sub = lt.sub_type.to_cxx_no_qualifiers
+    lt_sub == rt.sub_type.to_cxx_no_qualifiers ? rhs_cpp : "array_cast<#{lt_sub}>(#{rhs_cpp})"
+  end
+
   class VariableDeclarationWithInitializationAst < AstNode
     sig { override.params(symtab: SymbolTable, indent: Integer, indent_spaces: Integer).returns(String) }
     def gen_cpp(symtab, indent = 0, indent_spaces: 2)
@@ -854,7 +849,10 @@ module Idl
           "#{' ' * indent}#{type_name.gen_cpp(symtab, 0, indent_spaces:)} #{lhs.gen_cpp(symtab, 0, indent_spaces:)}(#{rhs.gen_cpp(symtab, 0, indent_spaces:)})"
         end
       else
-        "#{' ' * indent}std::array<#{type_name.gen_cpp(symtab, 0, indent_spaces:)}, #{ary_size.gen_cpp(symtab, 0, indent_spaces:)}> #{lhs.gen_cpp(symtab, 0, indent_spaces:)} = #{rhs.gen_cpp(symtab, 0, indent_spaces:)}"
+        lt = lhs_type(symtab)
+        rt = rhs.type(symtab)
+        rhs_cpp = Idl.maybe_array_cast(lt, rt, rhs.gen_cpp(symtab, 0, indent_spaces:))
+        "#{' ' * indent}std::array<#{type_name.gen_cpp(symtab, 0, indent_spaces:)}, #{ary_size.gen_cpp(symtab, 0, indent_spaces:)}> #{lhs.gen_cpp(symtab, 0, indent_spaces:)} = #{rhs_cpp}"
       end
     end
   end
@@ -874,9 +872,12 @@ module Idl
           "#{' ' * indent}#{var.gen_cpp(symtab, 0, indent_spaces:)}.at(#{index.gen_cpp(symtab, 0)})"
         end
       else
-        if var.text_value.start_with?("X")
-          #"#{' '*indent}#{var.gen_cpp(symtab, 0, indent_spaces:)}[#{index.gen_cpp(symtab, 0, indent_spaces:)}]"
-          "#{' ' * indent} __UDB_HART->_xreg(#{index.gen_cpp(symtab, 0, indent_spaces:)})"
+        var_type = var.type(symtab)
+        if var_type.kind == :array &&
+           var_type.sub_type.is_a?(Idl::RegFileElementType) &&
+           var_type.qualifiers.include?(:global)
+          rf_name = var_type.sub_type.name.downcase
+          "#{' ' * indent}__UDB_HART->_#{rf_name}reg(#{index.gen_cpp(symtab, 0, indent_spaces:)})"
         else
           "#{' ' * indent}#{var.gen_cpp(symtab, 0, indent_spaces:)}.at(#{index.gen_cpp(symtab, 0, indent_spaces:)}.get())"
         end
@@ -912,7 +913,10 @@ module Idl
   class VariableAssignmentAst < AstNode
     sig { override.params(symtab: SymbolTable, indent: Integer, indent_spaces: Integer).returns(String) }
     def gen_cpp(symtab, indent = 0, indent_spaces: 2)
-      "#{' ' * indent}#{lhs.gen_cpp(symtab, 0, indent_spaces:)} = #{rhs.gen_cpp(symtab, 0, indent_spaces:)}"
+      lt = lhs.type(symtab)
+      rt = rhs.type(symtab)
+      rhs_cpp = Idl.maybe_array_cast(lt, rt, rhs.gen_cpp(symtab, 0, indent_spaces:))
+      "#{' ' * indent}#{lhs.gen_cpp(symtab, 0, indent_spaces:)} = #{rhs_cpp}"
     end
   end
 
@@ -926,9 +930,12 @@ module Idl
   class AryElementAssignmentAst < AstNode
     sig { override.params(symtab: SymbolTable, indent: Integer, indent_spaces: Integer).returns(String) }
     def gen_cpp(symtab, indent = 0, indent_spaces: 2)
-      if lhs.text_value.start_with?("X")
-        #"#{' '*indent}  #{lhs.gen_cpp(symtab, 0, indent_spaces:)}[#{idx.gen_cpp(symtab, 0, indent_spaces:)}] = #{rhs.gen_cpp(symtab, 0, indent_spaces:)}"
-        "#{' ' * indent}__UDB_HART->_set_xreg( #{idx.gen_cpp(symtab, 0, indent_spaces:)}, #{rhs.gen_cpp(symtab, 0, indent_spaces:)})"
+      lhs_type = lhs.type(symtab)
+      if lhs_type.kind == :array &&
+         lhs_type.sub_type.is_a?(Idl::RegFileElementType) &&
+         lhs_type.qualifiers.include?(:global)
+        rf_name = lhs_type.sub_type.name.downcase
+        "#{' ' * indent}__UDB_HART->_set_#{rf_name}reg( #{idx.gen_cpp(symtab, 0, indent_spaces:)}, #{rhs.gen_cpp(symtab, 0, indent_spaces:)})"
       elsif lhs.type(symtab).kind == :bits
         "#{' ' * indent}#{lhs.gen_cpp(symtab, 0, indent_spaces:)}.setBit(#{idx.gen_cpp(symtab, 0, indent_spaces:)}, #{rhs.gen_cpp(symtab, 0, indent_spaces:)})"
       else
@@ -999,7 +1006,7 @@ module Idl
   class ArrayLiteralAst < AstNode
     sig { override.params(symtab: SymbolTable, indent: Integer, indent_spaces: Integer).returns(String) }
     def gen_cpp(symtab, indent = 0, indent_spaces: 2)
-      "{#{element_nodes.map { |e| e.gen_cpp(symtab, 0) }.join(', ')}}"
+      "std::array<#{element_nodes.fetch(0).type(symtab).to_cxx_no_qualifiers}, #{element_nodes.size}>{#{element_nodes.map { |e| e.gen_cpp(symtab, 0) }.join(', ')}}"
     end
   end
 
@@ -1011,21 +1018,12 @@ module Idl
       elsif name == "implemented_version?"
         "__UDB_FUNC_CALL template _implemented_version_Q_<#{arg_nodes[0].gen_cpp(symtab, 0)}, #{arg_nodes[1].text_value}>()"
       else
-        targs_cpp = template_arg_nodes.map { |t| t.gen_cpp(symtab, 0, indent_spaces:) }
         args_cpp = arg_nodes.map { |a| a.gen_cpp(symtab, 0, indent_spaces:) }
         ftype = func_type(symtab)
         if ftype.func_def_ast.constexpr?(symtab)
-          if targs_cpp.empty?
-            "__UDB_CONSTEXPR_FUNC_CALL #{name.gsub("?", "_Q_")}(#{args_cpp.join(', ')})"
-          else
-            "__UDB_CONSTEXPR_FUNC_CALL template #{name.gsub("?", "_Q_")}<#{targs_cpp.join(', ')}>(#{args_cpp.join(', ')})"
-          end
+          "__UDB_CONSTEXPR_FUNC_CALL #{name.gsub("?", "_Q_")}(#{args_cpp.join(', ')})"
         else
-          if targs_cpp.empty?
-            "__UDB_FUNC_CALL #{name.gsub("?", "_Q_")}(#{args_cpp.join(', ')})"
-          else
-            "__UDB_FUNC_CALL template #{name.gsub("?", "_Q_")}<#{targs_cpp.join(', ')}>(#{args_cpp.join(', ')})"
-          end
+          "__UDB_FUNC_CALL #{name.gsub("?", "_Q_")}(#{args_cpp.join(', ')})"
         end
       end
     end
