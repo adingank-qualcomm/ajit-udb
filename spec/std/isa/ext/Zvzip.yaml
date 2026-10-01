@@ -23,26 +23,10 @@ description: |
   These operations support packing and unpacking structured data and
   transposing small matrices.
 
-  This extension is Draft and has not been ratified. The instruction encodings
-  in version 0.3 are provisional pending codepoint allocation and may change.
-  `Zvzip` depends on `Zve32x`.
-
-  All operands have `EEW=SEW`. The destination is described by `vtype` and
-  `vl`, with `EMUL=LMUL`; `vzip.vv` sources use `EMUL=LMUL/2`, while
-  `vunzipe.v` and `vunzipo.v` sources use `EMUL=2*LMUL`. Pair instructions
-  use `EMUL=LMUL` for all operands. Standard vector alignment, masking,
-  prestart, inactive, and tail handling apply to destination indices.
-
-  If `Zvkt` is implemented, all `Zvzip` instructions shall execute with
-  data-independent execution latency. Unsupported SEW/LMUL settings and
-  prohibited register-group overlaps raise illegal-instruction exceptions;
-  masking and overlap behavior otherwise follows each instruction's rules.
-
   The extension defines `vzip.vv`, `vunzipe.v`, `vunzipo.v`, `vpaire.vv`,
-  and `vpairo.vv`. `vzip.vv` interleaves two half-EMUL sources. The unzip
-  instructions extract even and odd elements from a source with twice the
-  destination EMUL. The pair instructions interleave even or odd elements
-  from two same-EMUL sources without changing the element count.
+  and `vpairo.vv`. `vzip.vv` interleaves two element sequences. The unzip
+  instructions extract even and odd elements, and the pair instructions
+  perform even or odd pairwise transposition.
 
   See `$ISA_MANUAL_FORK/src/unpriv/zvzip.adoc`, anchor `ext:zvzip`, and the
   instruction anchors `insns-vzip`, `insns-vunzipe`, `insns-vunzipo`,
