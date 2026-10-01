@@ -1,0 +1,62 @@
+# Copyright (c) 2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+# yaml-language-server: $schema=../../../../schemas/inst_schema.json
+$schema: "inst_schema.json#"
+kind: instruction
+name: vzip.vv
+long_name: Vector zip
+description: |
+  Interleaves source vector register groups `vs2` and `vs1`, each with
+  EMUL=LMUL/2, into destination `vd` with EMUL=LMUL. For destination index
+  `i`, even indices read `vs2[i/2]` and odd indices read `vs1[i/2]`.
+  Standard vector masking, prestart, inactive, and tail handling applies.
+  The source and destination groups may overlap only when source EMUL is at
+  least 1 and their highest-numbered registers coincide. The encoding is
+  illegal when `2*SEW > LMUL * min(ELEN, VLEN)` or overlap rules are violated.
+definedBy:
+  extension:
+    name: Zvzip
+assembly: vd, vs2, vs1, vm
+encoding:
+  match: 111110-----------010-----1110111
+  variables:
+    - name: vm
+      location: 25
+    - name: vs2
+      location: 24-20
+    - name: vs1
+      location: 19-15
+    - name: vd
+      location: 11-7
+access:
+  s: always
+  u: always
+  vs: always
+  vu: always
+data_independent_timing: true
+operation(): |
+  VectorState state = vector_state();
+
+  if ((2 * state.sew > LMUL * min(ELEN, VLEN)) ||
+      (vreg_groups_overlap(vs2, LMUL / 2, vd, LMUL) &&
+       !((LMUL / 2 >= 1) && (vs2 + LMUL / 2 == vd + LMUL))) ||
+      (vreg_groups_overlap(vs1, LMUL / 2, vd, LMUL) &&
+       !((LMUL / 2 >= 1) && (vs1 + LMUL / 2 == vd + LMUL)))) {
+    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
+  }
+
+  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    U32 start_bit_pos = i * state.sew;
+    U32 end_bit_pos = start_bit_pos + state.sew - 1;
+    U32 source_start_bit_pos = (i / 2) * state.sew;
+    U32 source_end_bit_pos = source_start_bit_pos + state.sew - 1;
+    if (vm == 1'b1 || V[0][i:i] == 1'b1) {
+      if (i % 2 == 0) {
+        V[vd][end_bit_pos:start_bit_pos] = V[vs2][source_end_bit_pos:source_start_bit_pos];
+      } else {
+        V[vd][end_bit_pos:start_bit_pos] = V[vs1][source_end_bit_pos:source_start_bit_pos];
+      }
+    }
+  }
+
+  CSR[vstart].VALUE = 0;

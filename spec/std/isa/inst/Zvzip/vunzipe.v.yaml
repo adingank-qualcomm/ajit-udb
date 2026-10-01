@@ -1,0 +1,48 @@
+# Copyright (c) 2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+# yaml-language-server: $schema=../../../../schemas/inst_schema.json
+$schema: "inst_schema.json#"
+kind: instruction
+name: vunzipe.v
+long_name: Vector unzip even
+description: |
+  Extracts even-indexed elements from source vector register group `vs2`,
+  with EMUL=2*LMUL, into destination `vd`, with EMUL=LMUL. For `0 <= i < vl`,
+  `vd[i] = vs2[2*i]`; source indices below `2*vl` may be read. `LMUL=8`
+  and masked encodings (`vm=0`) are illegal. Destination/source overlap is
+  allowed only when their lowest-numbered vector registers coincide.
+definedBy:
+  extension:
+    name: Zvzip
+assembly: vd, vs2
+encoding:
+  match: 0100101-----01011010-----1110111
+  variables:
+    - name: vs2
+      location: 24-20
+    - name: vd
+      location: 11-7
+access:
+  s: always
+  u: always
+  vs: always
+  vu: always
+data_independent_timing: true
+operation(): |
+  VectorState state = vector_state();
+
+  if ((LMUL == 8) ||
+      (vreg_groups_overlap(vd, LMUL, vs2, 2 * LMUL) && (vd != vs2))) {
+    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
+  }
+
+  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    U32 destination_start_bit_pos = i * state.sew;
+    U32 destination_end_bit_pos = destination_start_bit_pos + state.sew - 1;
+    U32 source_start_bit_pos = (2 * i) * state.sew;
+    U32 source_end_bit_pos = source_start_bit_pos + state.sew - 1;
+    V[vd][destination_end_bit_pos:destination_start_bit_pos] =
+      V[vs2][source_end_bit_pos:source_start_bit_pos];
+  }
+
+  CSR[vstart].VALUE = 0;
