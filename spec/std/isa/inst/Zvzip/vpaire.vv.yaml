@@ -1,0 +1,62 @@
+# Copyright (c) 2026 Qualcomm Technologies, Inc. and/or its subsidiaries.
+# SPDX-License-Identifier: BSD-3-Clause-Clear
+# yaml-language-server: $schema=../../../../schemas/inst_schema.json
+$schema: "inst_schema.json#"
+kind: instruction
+name: vpaire.vv
+long_name: Vector pair even
+description: |
+  Interleaves even-indexed elements of two source vector register groups into
+  the destination. All operands have EMUL=LMUL. For destination index `i`,
+  even indices read `vs2[i]` and odd indices read `vs1[i-1]`, producing
+  `[vs2[0], vs1[0], vs2[2], vs1[2], ...]`. Standard vector masking,
+  prestart, inactive, and tail handling applies. The destination may not
+  overlap either source group.
+definedBy:
+  extension:
+    name: Zvzip
+assembly: vd, vs2, vs1, vm
+encoding:
+  match: 001111-----------000-----1110111
+  variables:
+    - name: vm
+      location: 25
+    - name: vs2
+      location: 24-20
+    - name: vs1
+      location: 19-15
+    - name: vd
+      location: 11-7
+access:
+  s: always
+  u: always
+  vs: always
+  vu: always
+data_independent_timing: true
+operation(): |
+  VectorState state = vector_state();
+
+  if (vreg_groups_overlap(vd, LMUL, vs2, LMUL) ||
+      vreg_groups_overlap(vd, LMUL, vs1, LMUL)) {
+    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
+  }
+
+  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
+    U32 start_bit_pos = i * state.sew;
+    U32 end_bit_pos = start_bit_pos + state.sew - 1;
+    U32 source_index = i;
+    if (i % 2 != 0) {
+      source_index = i - 1;
+    }
+    U32 source_start_bit_pos = source_index * state.sew;
+    U32 source_end_bit_pos = source_start_bit_pos + state.sew - 1;
+    if (vm == 1'b1 || V[0][i:i] == 1'b1) {
+      if (i % 2 == 0) {
+        V[vd][end_bit_pos:start_bit_pos] = V[vs2][source_end_bit_pos:source_start_bit_pos];
+      } else {
+        V[vd][end_bit_pos:start_bit_pos] = V[vs1][source_end_bit_pos:source_start_bit_pos];
+      }
+    }
+  }
+
+  CSR[vstart].VALUE = 0;
