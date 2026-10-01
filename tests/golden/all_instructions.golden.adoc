@@ -73616,12 +73616,12 @@ Base::
 |===
 
 Assembly::
-vunzipe.v vd, vs2
+vunzipe.v vd, vs2, vm
 
 Encoding::
 [wavedrom, ,svg,subs='attributes',width="100%"]
 ....
-{"reg":[{"bits":7,"name": 0x77,"type":2},{"bits":5,"name": "vd","type":4},{"bits":8,"name": 0x5a,"type":2},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x25,"type":2}]}
+{"reg":[{"bits":7,"name": 0x77,"type":2},{"bits":5,"name": "vd","type":4},{"bits":8,"name": 0x5a,"type":2},{"bits":5,"name": "vs2","type":4},{"bits":1,"name": "vm","type":4},{"bits":6,"name": 0x12,"type":2}]}
 ....
 
 Description::
@@ -73629,13 +73629,14 @@ Extracts even-indexed elements from source vector register group `vs2`,
 with EMUL=2*LMUL, into destination `vd`, with EMUL=LMUL. For `0 <= i < vl`,
 `vd[i] = vs2[2*i]`; source indices below `2*vl` may be read. `LMUL=8`
 and masked encodings (`vm=0`) are illegal. Destination/source overlap is
-allowed only when their lowest-numbered vector registers coincide.
+allowed only when `vd` equals `vs2`, as for narrowing instructions.
 
 
 Decode Variables::
 [width="100%", cols="1,2", options="header"]
 |===
 |Variable Name |Location
+|vm |$encoding[25]
 |vs2 |$encoding[24:20]
 |vd |$encoding[11:7]
 |===
@@ -73671,12 +73672,12 @@ Base::
 |===
 
 Assembly::
-vunzipo.v vd, vs2
+vunzipo.v vd, vs2, vm
 
 Encoding::
 [wavedrom, ,svg,subs='attributes',width="100%"]
 ....
-{"reg":[{"bits":7,"name": 0x77,"type":2},{"bits":5,"name": "vd","type":4},{"bits":8,"name": 0x7a,"type":2},{"bits":5,"name": "vs2","type":4},{"bits":7,"name": 0x25,"type":2}]}
+{"reg":[{"bits":7,"name": 0x77,"type":2},{"bits":5,"name": "vd","type":4},{"bits":8,"name": 0x7a,"type":2},{"bits":5,"name": "vs2","type":4},{"bits":1,"name": "vm","type":4},{"bits":6,"name": 0x12,"type":2}]}
 ....
 
 Description::
@@ -73684,13 +73685,14 @@ Extracts odd-indexed elements from source vector register group `vs2`,
 with EMUL=2*LMUL, into destination `vd`, with EMUL=LMUL. For `0 <= i < vl`,
 `vd[i] = vs2[2*i+1]`; source indices below `2*vl` may be read. `LMUL=8`
 and masked encodings (`vm=0`) are illegal. Destination/source overlap is
-allowed only when their lowest-numbered vector registers coincide.
+allowed only when `vd` equals `vs2`, as for narrowing instructions.
 
 
 Decode Variables::
 [width="100%", cols="1,2", options="header"]
 |===
 |Variable Name |Location
+|vm |$encoding[25]
 |vs2 |$encoding[24:20]
 |vd |$encoding[11:7]
 |===
@@ -75972,7 +75974,7 @@ EMUL=LMUL/2, into destination `vd` with EMUL=LMUL. For destination index
 Standard vector masking, prestart, inactive, and tail handling applies.
 The source and destination groups may overlap only when source EMUL is at
 least 1 and their highest-numbered registers coincide. The encoding is
-illegal when `2*SEW > LMUL * min(ELEN, VLEN)` or overlap rules are violated.
+illegal when `2*SEW > LMUL * ELEN` or overlap rules are violated.
 
 
 Decode Variables::
