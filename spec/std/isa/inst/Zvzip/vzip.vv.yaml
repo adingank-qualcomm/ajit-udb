@@ -12,7 +12,7 @@ description: |
   Standard vector masking, prestart, inactive, and tail handling applies.
   The source and destination groups may overlap only when source EMUL is at
   least 1 and their highest-numbered registers coincide. The encoding is
-  illegal when `2*SEW > LMUL * min(ELEN, VLEN)` or overlap rules are violated.
+  illegal when `2*SEW > LMUL * ELEN` or overlap rules are violated.
 definedBy:
   extension:
     name: Zvzip
@@ -35,28 +35,3 @@ access:
   vu: always
 data_independent_timing: true
 operation(): |
-  VectorState state = vector_state();
-
-  if ((2 * state.sew > LMUL * min(ELEN, VLEN)) ||
-      (vreg_groups_overlap(vs2, LMUL / 2, vd, LMUL) &&
-       !((LMUL / 2 >= 1) && (vs2 + LMUL / 2 == vd + LMUL))) ||
-      (vreg_groups_overlap(vs1, LMUL / 2, vd, LMUL) &&
-       !((LMUL / 2 >= 1) && (vs1 + LMUL / 2 == vd + LMUL)))) {
-    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
-  }
-
-  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
-    U32 start_bit_pos = i * state.sew;
-    U32 end_bit_pos = start_bit_pos + state.sew - 1;
-    U32 source_start_bit_pos = (i / 2) * state.sew;
-    U32 source_end_bit_pos = source_start_bit_pos + state.sew - 1;
-    if (vm == 1'b1 || V[0][i:i] == 1'b1) {
-      if (i % 2 == 0) {
-        V[vd][end_bit_pos:start_bit_pos] = V[vs2][source_end_bit_pos:source_start_bit_pos];
-      } else {
-        V[vd][end_bit_pos:start_bit_pos] = V[vs1][source_end_bit_pos:source_start_bit_pos];
-      }
-    }
-  }
-
-  CSR[vstart].VALUE = 0;

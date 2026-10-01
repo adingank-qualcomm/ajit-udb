@@ -35,33 +35,3 @@ access:
   vu: always
 data_independent_timing: true
 operation(): |
-  VectorState state = vector_state();
-
-  if (vreg_groups_overlap(vd, LMUL, vs2, LMUL) ||
-      vreg_groups_overlap(vd, LMUL, vs1, LMUL)) {
-    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
-  }
-
-  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
-    U32 start_bit_pos = i * state.sew;
-    U32 end_bit_pos = start_bit_pos + state.sew - 1;
-    U32 source_index = i;
-    if (i % 2 == 0) {
-      source_index = i + 1;
-    }
-    if (vm == 1'b1 || V[0][i:i] == 1'b1) {
-      if (source_index >= CSR[vl].VALUE) {
-        V[vd][end_bit_pos:start_bit_pos] = 0;
-      } else {
-        U32 source_start_bit_pos = source_index * state.sew;
-        U32 source_end_bit_pos = source_start_bit_pos + state.sew - 1;
-        if (i % 2 == 0) {
-          V[vd][end_bit_pos:start_bit_pos] = V[vs2][source_end_bit_pos:source_start_bit_pos];
-        } else {
-          V[vd][end_bit_pos:start_bit_pos] = V[vs1][source_end_bit_pos:source_start_bit_pos];
-        }
-      }
-    }
-  }
-
-  CSR[vstart].VALUE = 0;

@@ -34,9 +34,9 @@ description: |
   prestart, inactive, and tail handling apply to destination indices.
 
   If `Zvkt` is implemented, all `Zvzip` instructions shall execute with
-  data-independent execution latency. Unsupported SEW/LMUL settings,
-  prohibited register-group overlaps, and masked encodings of the unzip
-  instructions raise illegal-instruction exceptions.
+  data-independent execution latency. Unsupported SEW/LMUL settings and
+  prohibited register-group overlaps raise illegal-instruction exceptions;
+  masking and overlap behavior otherwise follows each instruction's rules.
 
   The extension defines `vzip.vv`, `vunzipe.v`, `vunzipo.v`, `vpaire.vv`,
   and `vpairo.vv`. `vzip.vv` interleaves two half-EMUL sources. The unzip

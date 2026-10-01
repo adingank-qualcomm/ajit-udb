@@ -10,14 +10,16 @@ description: |
   with EMUL=2*LMUL, into destination `vd`, with EMUL=LMUL. For `0 <= i < vl`,
   `vd[i] = vs2[2*i+1]`; source indices below `2*vl` may be read. `LMUL=8`
   and masked encodings (`vm=0`) are illegal. Destination/source overlap is
-  allowed only when their lowest-numbered vector registers coincide.
+  allowed only when `vd` equals `vs2`, as for narrowing instructions.
 definedBy:
   extension:
     name: Zvzip
-assembly: vd, vs2
+assembly: vd, vs2, vm
 encoding:
-  match: 0100101-----01111010-----1110111
+  match: 010010------01111010-----1110111
   variables:
+    - name: vm
+      location: 25
     - name: vs2
       location: 24-20
     - name: vd
@@ -29,20 +31,3 @@ access:
   vu: always
 data_independent_timing: true
 operation(): |
-  VectorState state = vector_state();
-
-  if ((LMUL == 8) ||
-      (vreg_groups_overlap(vd, LMUL, vs2, 2 * LMUL) && (vd != vs2))) {
-    raise(ExceptionCode::IllegalInstruction, mode(), $encoding);
-  }
-
-  for (U32 i = CSR[vstart].VALUE; i < CSR[vl].VALUE; i++) {
-    U32 destination_start_bit_pos = i * state.sew;
-    U32 destination_end_bit_pos = destination_start_bit_pos + state.sew - 1;
-    U32 source_start_bit_pos = (2 * i + 1) * state.sew;
-    U32 source_end_bit_pos = source_start_bit_pos + state.sew - 1;
-    V[vd][destination_end_bit_pos:destination_start_bit_pos] =
-      V[vs2][source_end_bit_pos:source_start_bit_pos];
-  }
-
-  CSR[vstart].VALUE = 0;
