@@ -18,7 +18,7 @@ definedBy:
     name: Zvzip
 assembly: vd, vs2, vs1, vm
 encoding:
-  match: 111110-----------010-----1110111
+  match: 111110-----------010-----1010111
   variables:
     - name: vm
       location: 25

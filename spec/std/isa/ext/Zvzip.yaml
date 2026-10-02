@@ -22,12 +22,3 @@ description: |
   and pairwise transposition of elements from two vector register groups.
   These operations support packing and unpacking structured data and
   transposing small matrices.
-
-  The extension defines `vzip.vv`, `vunzipe.v`, `vunzipo.v`, `vpaire.vv`,
-  and `vpairo.vv`. `vzip.vv` interleaves two element sequences. The unzip
-  instructions extract even and odd elements, and the pair instructions
-  perform even or odd pairwise transposition.
-
-  See `$ISA_MANUAL_FORK/src/unpriv/zvzip.adoc`, anchor `ext:zvzip`, and the
-  instruction anchors `insns-vzip`, `insns-vunzipe`, `insns-vunzipo`,
-  `insns-vpaire`, and `insns-vpairo`.
